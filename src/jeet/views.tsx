@@ -1,9 +1,8 @@
 import { useEffect, useState } from "react";
-import { Camera, Copy, Download, Flame } from "lucide-react";
+import { Camera, Flame } from "lucide-react";
 import { defById, PLAN_TITLE } from "./plan";
 import {
   DAY_NAMES,
-  buildReport,
   createDraft,
   daysSinceLast,
   draftFromSession,
@@ -11,15 +10,17 @@ import {
   inComeback,
   isGymDay,
   iso,
+  motivation,
   moveGymDay,
   sessionOn,
   weekdayChips,
   weekProgress,
 } from "./logic";
 import { saveMeasure, saveSession, setDraft, update, replaceState, defaultState } from "./store";
+import { Btn, Card, Field, MachinePhoto } from "./ui";
 import type { Draft, ExerciseLog, JeetState, TabId } from "./types";
 import { APP_VERSION } from "./types";
-import { Btn, Card, Field, MachinePhoto } from "./ui";
+import { androidBridge } from "./native";
 
 async function fileToJpeg(file: File): Promise<string> {
   const bitmap = await createImageBitmap(file);
@@ -53,8 +54,7 @@ export function HomeView({
   const comeback = inComeback(state, today);
   const gap = daysSinceLast(state, today);
   const hour = `${String(today.getHours()).padStart(2, "0")}:${String(today.getMinutes()).padStart(2, "0")}`;
-  const remind = gym && !attended && hour >= state.reminder;
-  const last = [...state.measures].sort((a, b) => (a.date < b.date ? 1 : -1))[0];
+  const remind = gym && !attended && hour >= state.reminder && state.reminders;
   const days = effectiveDays(state, today);
   const freeDays = weekdayChips(today).filter((d) => !days.includes(d.getDay()));
 
@@ -70,7 +70,6 @@ export function HomeView({
           <p className="text-sm text-muted">جيت</p>
           <h1 className="text-2xl font-semibold">حضورك هذا الأسبوع</h1>
         </div>
-        <p className="text-sm tabular-nums text-muted">{APP_VERSION}</p>
       </header>
 
       <div className="flex flex-col items-center py-2">
@@ -93,7 +92,9 @@ export function HomeView({
           />
         ))}
       </div>
-      <p className="-mt-2 text-center text-sm text-muted">هذا الأسبوع {done}/3</p>
+      <p className="-mt-2 text-center text-sm text-muted">
+        هذا الأسبوع <span dir="ltr">{done}/3</span>
+      </p>
       {done < 3 ? (
         <p className="text-center text-sm text-flame">باقي {3 - done} {3 - done === 1 ? "يوم" : "أيام"} قبل ما يبرد اللهب</p>
       ) : (
@@ -138,12 +139,8 @@ export function HomeView({
         ) : null}
       </Card>
 
-      <Card className="flex items-center justify-between p-4">
-        <div>
-          <p className="text-sm text-muted">آخر خصر</p>
-          <p className="text-2xl font-semibold tabular-nums">{last ? `${last.waist} سم` : "—"}</p>
-        </div>
-        <p className="text-sm text-muted">{last ? last.date : "القياس كل أحد"}</p>
+      <Card className="p-4">
+        <p className="text-lg font-medium leading-relaxed">{motivation(state, today)}</p>
       </Card>
     </div>
   );
@@ -168,7 +165,10 @@ export function TrainView({ state, today }: { state: JeetState; today: Date }) {
         {existing ? (
           <Card className="p-4">
             <p className="font-medium">سجّلت {PLAN_TITLE[existing.plan]} اليوم</p>
-            <p className="mt-1 text-sm text-muted">{existing.kind === "min" ? "جلسة قصيرة" : "جلسة كاملة"}</p>
+            <p className="mt-1 text-sm text-muted">
+              {existing.kind === "min" ? "جلسة قصيرة" : "جلسة كاملة"} · الأسبوع{" "}
+              <span dir="ltr">{Math.min(weekProgress(state, today), 3)}/3</span>
+            </p>
             <Btn className="mt-4 w-full" variant="ghost" onClick={() => setDraft(draftFromSession(existing))}>
               تعديل تسجيل اليوم
             </Btn>
@@ -226,7 +226,7 @@ export function TrainView({ state, today }: { state: JeetState; today: Date }) {
             {PLAN_TITLE[draft.plan]} · {draft.kind === "min" ? "قصيرة" : "كاملة"}
           </p>
           <h1 className="text-xl font-semibold">
-            {draft.step + 1} / {draft.logs.length}
+            {draft.step + 1} من {draft.logs.length}
           </h1>
         </div>
         <p className="text-sm text-muted">{def.kind === "walk" ? "كارديو" : def.reps}</p>
@@ -257,8 +257,9 @@ export function TrainView({ state, today }: { state: JeetState; today: Date }) {
               />
             </label>
           </div>
+          {def.cue ? <p className="text-sm text-muted">{def.cue}</p> : null}
           {def.kind === "walk" && log.walk ? (
-            <div className="grid grid-cols-3 gap-2">
+            <div className="flex flex-col gap-3">
               <Field
                 label="دقائق"
                 value={log.walk.minutes}
@@ -286,8 +287,9 @@ export function TrainView({ state, today }: { state: JeetState; today: Date }) {
           ) : (
             <div className="flex flex-col gap-3">
               {log.sets.map((set, index) => (
-                <div key={index} className="grid grid-cols-[auto_1fr_1fr] items-end gap-2">
-                  <span className="pb-3 text-sm tabular-nums text-muted">{index + 1}</span>
+                <div key={index} className="flex flex-col gap-2 rounded-xl bg-raised/40 p-2">
+                  <span className="text-sm text-muted">مجموعة {index + 1}</span>
+                  <div className="grid grid-cols-1 gap-2">
                   <Field
                     label="كغ"
                     step="1"
@@ -305,6 +307,7 @@ export function TrainView({ state, today }: { state: JeetState; today: Date }) {
                       patchLog(draft, draft.step, { ...log, sets });
                     }}
                   />
+                  </div>
                 </div>
               ))}
               <Btn
@@ -418,52 +421,22 @@ function WaistChart({ rows }: { rows: { name: string; waist: number }[] }) {
   );
 }
 
-export function ReportView({ state, today }: { state: JeetState; today: Date }) {
-  const report = buildReport(state, today);
-  const [copied, setCopied] = useState(false);
-  return (
-    <div className="flex flex-col gap-4">
-      <h1 className="text-2xl font-semibold">التقرير</h1>
-      <p className="text-sm text-muted">
-        انسخه وأرسله لنموذج ذكاء. التقرير يطلب تعديلاً واحداً ويمنع تغيير الخطة أو الحديث عن الهرمونات.
-      </p>
-      <div className="grid grid-cols-2 gap-3">
-        <Btn
-          variant="ghost"
-          onClick={async () => {
-            await navigator.clipboard.writeText(report.text);
-            setCopied(true);
-          }}
-        >
-          <Copy className="size-4" aria-hidden />
-          {copied ? "تم النسخ" : "نسخ"}
-        </Btn>
-        <Btn
-          variant="ghost"
-          onClick={() => {
-            const blob = new Blob([report.text], { type: "text/plain;charset=utf-8" });
-            const url = URL.createObjectURL(blob);
-            const link = document.createElement("a");
-            link.href = url;
-            link.download = `jeet-report-${iso(today)}.txt`;
-            link.click();
-            URL.revokeObjectURL(url);
-          }}
-        >
-          <Download className="size-4" aria-hidden />
-          تنزيل
-        </Btn>
-      </div>
-      <Card className="p-4">
-        <pre className="max-h-96 overflow-auto whitespace-pre-wrap text-sm leading-relaxed text-fg">{report.text}</pre>
-      </Card>
-    </div>
-  );
-}
-
 export function SettingsView({ state, onTab }: { state: JeetState; onTab: (tab: TabId) => void }) {
   const [swapFrom, setSwapFrom] = useState<number | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
+  const [importError, setImportError] = useState(false);
+  const [perm, setPerm] = useState("");
+
+  useEffect(() => {
+    const read = () => setPerm(androidBridge()?.notifyStatus?.() ?? "");
+    read();
+    window.addEventListener("focus", read);
+    document.addEventListener("visibilitychange", read);
+    return () => {
+      window.removeEventListener("focus", read);
+      document.removeEventListener("visibilitychange", read);
+    };
+  }, []);
 
   function chooseDay(dow: number) {
     if (state.gymDays.includes(dow)) {
@@ -503,9 +476,22 @@ export function SettingsView({ state, onTab }: { state: JeetState; onTab: (tab: 
           })}
         </div>
       </Card>
-      <Card className="p-4">
+      <Card className="flex flex-col gap-3 p-4">
+        <div className="flex items-center justify-between gap-3">
+          <p className="font-medium">تذكير أيام النادي</p>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={state.reminders}
+            onClick={() => update((current) => ({ ...current, reminders: !current.reminders }))}
+            className={`h-8 w-14 rounded-full px-1 ${state.reminders ? "bg-teal" : "bg-raised"}`}
+          >
+            <span className={`block size-6 rounded-full bg-fg ${state.reminders ? "ms-auto" : ""}`} />
+          </button>
+        </div>
+        <p className="text-sm text-muted">إشعار في الأيام الثلاثة فقط، في الوقت الذي تختاره. لا يصل في الراحة.</p>
         <label className="flex flex-col gap-2 text-sm text-muted">
-          وقت التذكير في أيامك فقط
+          الوقت
           <input
             type="time"
             value={state.reminder}
@@ -513,6 +499,20 @@ export function SettingsView({ state, onTab }: { state: JeetState; onTab: (tab: 
             className="h-12 rounded-xl border border-line bg-raised px-3 text-base text-fg"
           />
         </label>
+        <Btn
+          variant="ghost"
+          onClick={() => {
+            const bridge = androidBridge();
+            if (!bridge) return;
+            if (perm === "denied") bridge.openNotifySettings?.();
+            else bridge.requestNotify?.();
+          }}
+        >
+          {perm === "granted" ? "الإشعارات مسموحة" : perm === "denied" ? "افتح إعداد الإشعارات" : "السماح بالإشعارات"}
+        </Btn>
+        {androidBridge() ? null : (
+          <p className="text-sm text-muted">إذن الإشعارات يظهر بعد تثبيت نسخة الجوال.</p>
+        )}
       </Card>
       <Card className="flex flex-col gap-3 p-4">
         <p className="font-medium">نسخة البيانات</p>
@@ -538,12 +538,20 @@ export function SettingsView({ state, onTab }: { state: JeetState; onTab: (tab: 
             className="sr-only"
             onChange={async (event) => {
               const file = event.target.files?.[0];
+              event.target.value = "";
               if (!file) return;
-              const text = await file.text();
-              replaceState(JSON.parse(text) as JeetState);
+              try {
+                const parsed = JSON.parse(await file.text()) as JeetState;
+                if (!parsed || typeof parsed !== "object") throw new Error("bad");
+                replaceState(parsed);
+                setImportError(false);
+              } catch {
+                setImportError(true);
+              }
             }}
           />
         </label>
+        {importError ? <p className="text-sm text-flame">الملف ليس نسخة جيت.</p> : null}
       </Card>
       <Card className="p-4">
         {confirmReset ? (

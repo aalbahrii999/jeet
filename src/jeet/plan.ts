@@ -25,8 +25,9 @@ function strength(
   name: string,
   image: string,
   altId?: string,
+  cue?: string,
 ): ExerciseDef {
-  return { id, name, kind: "strength", image, sets: 3, reps: "8–12", altId };
+  return { id, name, kind: "strength", image, sets: 3, reps: "8–12", altId, cue };
 }
 
 export const EXERCISES: Record<string, ExerciseDef> = {
@@ -34,14 +35,14 @@ export const EXERCISES: Record<string, ExerciseDef> = {
   "walk-out-a": walkOut("walk-out-a", 12, 2),
   "walk-out-b": walkOut("walk-out-b", 12, 2),
   "walk-out-c": walkOut("walk-out-c", 15, 3),
-  "chest-press": strength("chest-press", "جهاز ضغط صدر", "chest-press", "pec-deck"),
+  "chest-press": strength("chest-press", "جهاز ضغط صدر", "chest-press", "pec-deck", "ادفع المقبضين أمام الصدر، لا من فوق الرأس."),
   "shoulder-press": strength("shoulder-press", "جهاز ضغط كتف", "shoulder-press", "rear-delt"),
-  "pec-deck": strength("pec-deck", "جهاز فراشة", "pec-deck", "chest-press"),
-  triceps: strength("triceps", "جهاز ترايسِبس", "triceps"),
-  abs: strength("abs", "جهاز بطن", "abs", "back-ext"),
+  "pec-deck": strength("pec-deck", "جهاز فراشة", "pec-deck", "chest-press", "اجمع الذراعين أمام الصدر وظهرك على الوسادة."),
+  triceps: strength("triceps", "جهاز ترايسِبس", "triceps", undefined, "كبل دفع للأسفل. المرفقان بجانب الجسم."),
+  abs: strength("abs", "جهاز بطن", "abs", "back-ext", "وسادة على الصدر، القدمان مثبتتان، وقرّب الصدر من الركبتين."),
   "lat-pulldown": strength("lat-pulldown", "سحب عالي", "lat-pulldown", "seated-row"),
-  "seated-row": strength("seated-row", "تجديف جالس", "seated-row", "lat-pulldown"),
-  "rear-delt": strength("rear-delt", "جهاز كتف خلفي", "rear-delt", "shoulder-press"),
+  "seated-row": strength("seated-row", "تجديف جالس", "seated-row", "lat-pulldown", "اسحب المقبض نحو أسفل الصدر. الظهر ثابت."),
+  "rear-delt": strength("rear-delt", "جهاز كتف خلفي", "rear-delt", "shoulder-press", "نفس جهاز الفراشة، لكن وجهك للوسادة واسحب للخلف."),
   biceps: strength("biceps", "جهاز بايسِبس", "biceps"),
   "back-ext": strength("back-ext", "جهاز أسفل الظهر", "back-ext", "abs"),
   "leg-press": strength("leg-press", "جهاز ضغط رجل", "leg-press", "leg-ext"),

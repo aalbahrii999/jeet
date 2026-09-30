@@ -1,3 +1,8 @@
 <resources>
     <string name="app_name">جيت</string>
+    <string name="notify_title">جيت</string>
+    <string name="notify_body">اليوم يوم نادي. عشرون دقيقة تكفي.</string>
+    <string name="notify_channel">أيام النادي</string>
+    <string name="notify_channel_desc">تذكير في أيام النادي الثلاثة فقط.</string>
+    <string name="share_pdf">تقرير جيت</string>
 </resources>

@@ -38,7 +38,7 @@ export function MachinePhoto({ image, photos, alt }: { image: string; photos: Re
     <img
       src={src}
       alt={alt}
-      className="aspect-[4/3] w-full object-cover"
+      className="aspect-[4/3] w-full bg-raised object-contain"
       onError={() => setFailed(true)}
     />
   );
@@ -55,20 +55,44 @@ export function Field({
   onChange: (value: number | null) => void;
   step?: string;
 }) {
+  const delta = Number(step) || 1;
+  function bump(dir: number) {
+    const base = value ?? 0;
+    const next = Math.round((base + dir * delta) * 10) / 10;
+    onChange(Math.max(0, next));
+  }
   return (
     <label className="flex flex-col gap-1 text-sm text-muted">
       {label}
-      <input
-        inputMode="decimal"
-        dir="ltr"
-        step={step}
-        value={value ?? ""}
-        onChange={(event) => {
-          const next = event.target.value;
-          onChange(next === "" ? null : Number(next));
-        }}
-        className="h-12 rounded-xl border border-line bg-raised text-center text-base text-fg tabular-nums outline-none focus:border-teal"
-      />
+      <span className="flex items-center gap-1" dir="ltr">
+        <button
+          type="button"
+          className="h-12 w-11 shrink-0 rounded-xl bg-raised text-lg text-fg"
+          onClick={() => bump(-1)}
+          aria-label={`أنقص ${label}`}
+        >
+          −
+        </button>
+        <input
+          inputMode="decimal"
+          dir="ltr"
+          step={step}
+          value={value ?? ""}
+          onChange={(event) => {
+            const next = event.target.value;
+            onChange(next === "" ? null : Number(next));
+          }}
+          className="h-12 min-w-0 flex-1 rounded-xl border border-line bg-raised text-center text-base text-fg tabular-nums outline-none focus:border-teal"
+        />
+        <button
+          type="button"
+          className="h-12 w-11 shrink-0 rounded-xl bg-raised text-lg text-fg"
+          onClick={() => bump(1)}
+          aria-label={`زد ${label}`}
+        >
+          +
+        </button>
+      </span>
     </label>
   );
 }

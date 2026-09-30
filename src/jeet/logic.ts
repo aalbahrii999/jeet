@@ -271,3 +271,124 @@ export function asset(path: string): string {
   if (typeof window !== "undefined" && window.location.protocol === "file:") return clean;
   return `/${clean}`;
 }
+
+export function motivation(state: JeetState, today: Date): string {
+  const gym = isGymDay(state, today);
+  const attended = Boolean(sessionOn(state, today));
+  const done = Math.min(weekProgress(state, today), 3);
+  const gap = daysSinceLast(state, today);
+  const measured = state.measures.some((item) => item.date >= iso(weekStart(today)));
+  if (gap === null && gym && !attended) return "أول حضور يفتح السجل. عشرون دقيقة تكفي.";
+  if (state.ember && gym && !attended) return "اللهب خافت. جلسة اليوم تعيده، ولو كانت قصيرة.";
+  if (state.ember && !gym) return "راحة اليوم لا تطفئ اللهب. الأسبوع الجاي يعيده.";
+  if (attended && done >= 3) return "الأسبوع انغلق بثلاثة أيام. الراحة الآن جزء من الخطة.";
+  if (attended) return `حضور اليوم محسوب. صار الأسبوع ${done} من 3.`;
+  if (gym && done === 2) return "باقي يوم ويكتمل الأسبوع. لا تؤجله.";
+  if (gym && inComeback(state, today)) return "الرجوع أخف من الانقطاع. ابدأ بوزن أقل أو بعشرين دقيقة.";
+  if (gym) return "ثلاثة أيام تكفي إذا ثبتّت. اليوم واحد منها.";
+  if (today.getDay() === 0 && !measured) return "الأحد للقياس عند السرّة. نفس المكان، بعد زفير طبيعي.";
+  return "أيام الراحة تحمي الستريك. النادي في أيامه فقط.";
+}
+
+export function attendanceWeeks(state: JeetState, today: Date, count = 8) {
+  const start = weekStart(today);
+  const rows = [];
+  for (let i = count - 1; i >= 0; i -= 1) {
+    const week = addDays(start, -7 * i);
+    const dates = new Set(sessionsInWeek(state, week).map((session) => session.date));
+    rows.push({
+      start: iso(week),
+      label: iso(week).slice(5),
+      count: Math.min(dates.size, 3),
+    });
+  }
+  return rows;
+}
+
+export type ReportModel = {
+  generated: string;
+  weekStart: string;
+  done: number;
+  target: number;
+  streak: number;
+  ember: boolean;
+  comeback: boolean;
+  daysSince: number | null;
+  gymDays: string[];
+  weeks: { start: string; count: number }[];
+  measures: {
+    date: string;
+    waist: number;
+    weight: number;
+    waistDelta: number | null;
+    weightDelta: number | null;
+  }[];
+  sessions: {
+    date: string;
+    plan: string;
+    kind: string;
+    exercises: {
+      name: string;
+      walk?: { minutes: number; speed: number; incline: number };
+      sets: { kg: number | null; reps: number | null }[];
+    }[];
+  }[];
+  lifts: { name: string; last: number | null; prev: number | null }[];
+  weak: boolean;
+};
+
+export function reportModel(state: JeetState, today = new Date()): ReportModel {
+  const measures = [...state.measures].sort((a, b) => (a.date < b.date ? -1 : 1));
+  const sessions = [...state.sessions].sort((a, b) => (a.date < b.date ? 1 : -1));
+  const liftIds = [
+    "chest-press",
+    "shoulder-press",
+    "pec-deck",
+    "lat-pulldown",
+    "seated-row",
+    "leg-press",
+    "leg-ext",
+    "leg-curl",
+  ];
+  return {
+    generated: iso(today),
+    weekStart: iso(weekStart(today)),
+    done: weekProgress(state, today),
+    target: state.gymDays.length,
+    streak: state.streak,
+    ember: state.ember,
+    comeback: inComeback(state, today),
+    daysSince: daysSinceLast(state, today),
+    gymDays: effectiveDays(state, today).map((day) => DAY_NAMES[day] ?? ""),
+    weeks: attendanceWeeks(state, today, 8),
+    measures: measures.map((item, index) => {
+      const prev = measures[index - 1];
+      return {
+        date: item.date,
+        waist: item.waist,
+        weight: item.weight,
+        waistDelta: prev ? Math.round((item.waist - prev.waist) * 10) / 10 : null,
+        weightDelta: prev ? Math.round((item.weight - prev.weight) * 10) / 10 : null,
+      };
+    }),
+    sessions: sessions.map((session) => ({
+      date: session.date,
+      plan: session.plan,
+      kind: session.kind,
+      exercises: session.exercises.map((log) => ({
+        name: defById(log.exerciseId).name,
+        walk: log.walk,
+        sets: log.sets.map((set) => ({ kg: set.kg, reps: set.reps })),
+      })),
+    })),
+    lifts: liftIds.map((id) => {
+      const found = sessions.filter((session) => bestKg(session, id) !== null);
+      return {
+        name: defById(id).name,
+        last: found[0] ? bestKg(found[0], id) : null,
+        prev: found[1] ? bestKg(found[1], id) : null,
+      };
+    }),
+    weak: measures.length < 2 || sessions.length < 2,
+  };
+}
