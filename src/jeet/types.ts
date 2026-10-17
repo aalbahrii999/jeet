@@ -1,5 +1,5 @@
-export const APP_VERSION = "1.2.0";
-export const APP_VERSION_CODE = 3;
+export const APP_VERSION = "1.3.0";
+export const APP_VERSION_CODE = 4;
 
 export type PlanId = "push" | "pull" | "legs" | "upper" | "lower" | "A" | "B" | "C";
 export type SessionKind = "full" | "min";

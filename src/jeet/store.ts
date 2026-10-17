@@ -128,6 +128,14 @@ export function saveSession(session: Session) {
   }));
 }
 
+export function deleteToday(date: string) {
+  update((current) => ({
+    ...current,
+    draft: current.draft?.date === date ? null : current.draft,
+    sessions: current.sessions.filter((item) => item.date !== date),
+  }));
+}
+
 export function setDraft(draft: Draft | null) {
   update((current) => ({ ...current, draft }));
 }

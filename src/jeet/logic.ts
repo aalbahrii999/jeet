@@ -1,4 +1,4 @@
-import { DAY_PLAN, defById, slotsFor } from "./plan";
+import { DAY_PLAN, defById, PLAN_TITLE, PROGRAM_DAYS, slotsFor } from "./plan";
 import type { Draft, ExerciseLog, JeetState, PlanId, Session, SessionKind } from "./types";
 import { APP_VERSION } from "./types";
 
@@ -41,7 +41,7 @@ export function effectiveDays(state: JeetState, anyDay: Date): number[] {
 }
 
 export function isGymDay(state: JeetState, date: Date): boolean {
-  return effectiveDays(state, date).includes(date.getDay());
+  return state.gymDays.includes(date.getDay());
 }
 
 export function sessionsInWeek(state: JeetState, start: Date): Session[] {
@@ -104,16 +104,34 @@ export function sessionOn(state: JeetState, date: Date): Session | undefined {
   return state.sessions.find((s) => s.date === key);
 }
 
+const PLAN_ORDER: PlanId[] = ["push", "pull", "legs", "upper", "lower"];
+
+function countBefore(state: JeetState, date: Date): number {
+  const start = iso(weekStart(date));
+  const key = iso(date);
+  return state.sessions.filter((item) => item.date >= start && item.date < key).length;
+}
+
 export function planForDate(state: JeetState, date: Date): PlanId {
-  const dow = date.getDay();
-  const map = state.moves[iso(weekStart(date))] ?? {};
-  for (const [origin, dest] of Object.entries(map)) {
-    if (dest === dow) {
-      const plan = DAY_PLAN[Number(origin)];
-      if (plan) return plan;
-    }
+  const existing = sessionOn(state, date);
+  if (existing) return existing.plan;
+  return PLAN_ORDER[Math.min(countBefore(state, date), PLAN_ORDER.length - 1)];
+}
+
+export function canTrain(state: JeetState, today: Date): boolean {
+  if (sessionOn(state, today) || state.draft?.date === iso(today)) return true;
+  const target = state.gymDays.length || PLAN_ORDER.length;
+  if (weekProgress(state, today) >= target) return false;
+  if (isGymDay(state, today)) return true;
+  const start = weekStart(today);
+  const key = iso(today);
+  let scheduled = 0;
+  for (let i = 0; i < 7; i += 1) {
+    const day = addDays(start, i);
+    if (iso(day) >= key) break;
+    if (PROGRAM_DAYS.includes(day.getDay())) scheduled += 1;
   }
-  return DAY_PLAN[dow] ?? "push";
+  return countBefore(state, today) < scheduled;
 }
 
 export function repCeiling(label?: string): number | null {
@@ -318,6 +336,10 @@ export function motivation(state: JeetState, today: Date): string {
   const done = Math.min(weekProgress(state, today), target);
   const gap = daysSinceLast(state, today);
   const measured = measuredThisWeek(state, today);
+  if (!attended && canTrain(state, today)) {
+    const plan = planForDate(state, today);
+    if (DAY_PLAN[today.getDay()] !== plan) return `معك ${PLAN_TITLE[plan]}. الترتيب يتبع حضورك.`;
+  }
   if (gap === null && gym && !attended) return "أول حضور يفتح السجل. جلسة قصيرة تكفي.";
   if (state.ember && gym && !attended) return "اللهب خافت. حصة اليوم تعيده، ولو كانت قصيرة.";
   if (state.ember && !gym) return "راحة اليوم لا تطفئ اللهب. الأسبوع الجاي يعيده.";

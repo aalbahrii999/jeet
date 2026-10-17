@@ -6,4 +6,6 @@
     <string name="notify_channel">أيام النادي</string>
     <string name="notify_channel_desc">تذكير الحصص الخمس، وتذكير القياس يوم الجمعة.</string>
     <string name="share_pdf">تقرير جيت</string>
+    <string name="camera_denied">اسمح بالكاميرا لجيت</string>
+    <string name="pick_photo">اختر صورة</string>
 </resources>

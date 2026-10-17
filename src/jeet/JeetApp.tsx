@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { BarChart3, Dumbbell, Flame, Ruler, Settings } from "lucide-react";
 import { HomeView, MeasureView, SettingsView, TrainView } from "./views";
 import { StatsView } from "./report";
-import { effectiveDays, iso, measuredThisWeek, sessionOn, shotThisWeek } from "./logic";
+import { iso, measuredThisWeek, sessionOn, shotThisWeek } from "./logic";
 import { androidBridge, jeetWindow } from "./native";
 import { setDraft, useJeet } from "./store";
 import type { TabId } from "./types";
@@ -47,7 +47,7 @@ export function JeetApp() {
         JSON.stringify({
           enabled: state.reminders,
           time: state.reminder,
-          days: effectiveDays(state, now),
+          days: state.gymDays,
           skipToday: Boolean(sessionOn(state, now)),
           today: iso(now),
           measureDay: 5,
@@ -61,7 +61,7 @@ export function JeetApp() {
     return () => {
       delete jeetWindow().jeetSyncReminders;
     };
-  }, [state.reminders, state.reminder, state.measureTime, state.gymDays, state.moves, state.sessions, state.measures, state.bodyShots]);
+  }, [state.reminders, state.reminder, state.measureTime, state.gymDays, state.sessions, state.measures, state.bodyShots]);
 
   useEffect(() => {
     androidBridge()?.requestNotify?.();

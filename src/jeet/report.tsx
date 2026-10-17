@@ -75,7 +75,7 @@ function ReportSheet({ model }: { model: ReportModel }) {
     lifts: model.lifts,
     constraints: {
       days_per_week: 5,
-      keep_split: "Sun push / Mon pull / Tue legs / Thu upper / Fri lower",
+      keep_split: "order is push, pull, legs, upper, lower. A missed day moves that plan to the next day you attend. Do not skip ahead.",
       machines_only: true,
       one_change_only: true,
       no_hormone_advice: true,
@@ -93,9 +93,9 @@ function ReportSheet({ model }: { model: ReportModel }) {
 
       <h2 style={{ marginTop: 28, fontSize: 18 }}>قيود على أي تحليل</h2>
       <p style={{ lineHeight: 1.7 }}>
-        خمس حصص ثابتة: الأحد دفع، الاثنين سحب، الثلاثاء أرجل، الخميس علوي، الجمعة سفلي. الأربعاء والسبت راحة.
-        أجهزة فقط لا أوزان حرة. تعديل واحد فقط. لا نصيحة هرمونات ولا تشخيص. إذا القياس أو الصور أو الأوزان ناقصة فقل ذلك
-        ولا تخترع تقدماً.
+        خمس حصص بالترتيب: دفع ثم سحب ثم أرجل ثم علوي ثم سفلي. إذا فات يوم، حصته تنتقل ليوم الحضور ولا تُتخطى.
+        الأربعاء والسبت راحة إلا للتعويض. أجهزة فقط لا أوزان حرة. تعديل واحد فقط. لا نصيحة هرمونات ولا تشخيص. إذا القياس أو
+        الصور أو الأوزان ناقصة فقل ذلك ولا تخترع تقدماً.
       </p>
 
       <h2 style={{ fontSize: 18 }}>الحضور</h2>

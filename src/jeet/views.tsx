@@ -1,30 +1,29 @@
 import { useEffect, useState } from "react";
 import { Camera, Flame } from "lucide-react";
-import { PLAN_TITLE, slotFor } from "./plan";
+import { DAY_PLAN, PLAN_TITLE, slotFor } from "./plan";
 import {
   DAY_NAMES,
+  canTrain,
   createDraft,
   daysSinceLast,
   draftFromSession,
-  effectiveDays,
   inComeback,
   isGymDay,
   iso,
   measuredThisWeek,
   motivation,
-  moveGymDay,
+  planForDate,
   readyToBump,
   repCeiling,
   sessionOn,
   shotThisWeek,
-  weekdayChips,
   weekProgress,
 } from "./logic";
-import { defaultState, replaceState, saveBodyShot, saveMeasure, saveSession, setDraft, update } from "./store";
+import { defaultState, deleteToday, replaceState, saveBodyShot, saveMeasure, saveSession, setDraft, update } from "./store";
 import { Btn, Card, Field, MachinePhoto } from "./ui";
 import type { BodyShot, Draft, ExerciseLog, JeetState, TabId } from "./types";
 import { APP_VERSION } from "./types";
-import { androidBridge } from "./native";
+import { androidBridge, pickDevicePhoto, takeDevicePhoto } from "./native";
 
 async function fileToJpeg(file: File, max = 960, quality = 0.72): Promise<string> {
   const bitmap = await createImageBitmap(file);
@@ -43,6 +42,76 @@ function patchLog(draft: Draft, index: number, log: ExerciseLog) {
   setDraft({ ...draft, logs });
 }
 
+function PhotoPick({
+  facing,
+  label,
+  className,
+  max,
+  quality,
+  onImage,
+  onFail,
+}: {
+  facing: "user" | "environment";
+  label: string;
+  className: string;
+  max: number;
+  quality: number;
+  onImage: (url: string) => void;
+  onFail: (message: string) => void;
+}) {
+  const native = Boolean(androidBridge()?.takePhoto);
+  if (!native) {
+    return (
+      <label className={className}>
+        <Camera className="size-4" aria-hidden />
+        {label}
+        <input
+          type="file"
+          accept="image/*"
+          capture={facing}
+          className="file-clip"
+          onChange={async (event) => {
+            const file = event.target.files?.[0];
+            event.target.value = "";
+            if (!file) return;
+            const url = await fileToJpeg(file, max, quality);
+            if (!url) onFail("تعذّر حفظ الصورة.");
+            else onImage(url);
+          }}
+        />
+      </label>
+    );
+  }
+  return (
+    <div className="flex flex-col gap-2">
+      <button
+        type="button"
+        className={className}
+        onClick={async () => {
+          const result = await takeDevicePhoto(facing);
+          if (result === "file" || result === "cancel") return;
+          if (result === "denied") onFail("اسمح بالكاميرا لجيت من إعدادات الجوال، ثم حاول مرة أخرى.");
+          else onImage(result);
+        }}
+      >
+        <Camera className="size-4" aria-hidden />
+        {label}
+      </button>
+      <button
+        type="button"
+        className="min-h-11 text-sm text-muted"
+        onClick={async () => {
+          const result = await pickDevicePhoto();
+          if (result === "file" || result === "cancel") return;
+          onImage(result);
+        }}
+      >
+        من المعرض
+      </button>
+    </div>
+  );
+}
+
 export function HomeView({
   state,
   today,
@@ -58,24 +127,21 @@ export function HomeView({
   const done = Math.min(weekProgress(state, today), target);
   const gym = isGymDay(state, today);
   const attended = Boolean(sessionOn(state, today));
+  const trainable = canTrain(state, today);
+  const coming = planForDate(state, today);
+  const shifted = trainable && DAY_PLAN[today.getDay()] !== coming;
   const comeback = inComeback(state, today);
   const gap = daysSinceLast(state, today);
   const hour = `${String(today.getHours()).padStart(2, "0")}:${String(today.getMinutes()).padStart(2, "0")}`;
   const remind = gym && !attended && hour >= state.reminder && state.reminders;
-  const days = effectiveDays(state, today);
-  const freeDays = weekdayChips(today).filter((d) => !days.includes(d.getDay()));
   const needMeasure = !measuredThisWeek(state, today);
   const needShot = !shotThisWeek(state, today);
-  const todayKey = iso(today);
-  const pastMissed = weekdayChips(today).filter(
-    (day) => iso(day) < todayKey && days.includes(day.getDay()) && !sessionOn(state, day),
-  );
-  const laterFree = weekdayChips(today).filter((day) => iso(day) >= todayKey && !days.includes(day.getDay()));
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   let action = "اليوم راحة. الستريك محمي";
   if (state.draft?.date === iso(today)) action = "كمّل تمرين اليوم";
   else if (attended) action = "تم الحضور اليوم";
-  else if (gym) action = "جيت";
+  else if (trainable) action = "جيت";
 
   return (
     <div className="flex flex-col gap-5">
@@ -120,11 +186,10 @@ export function HomeView({
       <Card className="p-4">
         <p className="text-sm text-muted">{DAY_NAMES[today.getDay()]}</p>
         <p className="mt-1 text-xl font-semibold">
-          {gym ? "يوم نادي" : "يوم راحة"}
-          {attended ? " · سجّلت حضورك" : ""}
+          {attended ? "سجّلت حضورك" : trainable && !gym ? "تعويض حصة فائتة" : gym ? "يوم نادي" : "يوم راحة"}
         </p>
         <p className="mt-1 text-sm text-muted">
-          أيامك: {days.map((d) => DAY_NAMES[d]).join(" · ")}
+          أيامك: {state.gymDays.map((d) => DAY_NAMES[d]).join(" · ")}
         </p>
         {comeback ? (
           <p className="mt-3 text-sm text-flame">
@@ -136,44 +201,33 @@ export function HomeView({
         <Btn className="mt-4 w-full" onClick={onTrain}>
           {action}
         </Btn>
-        {gym && !attended && freeDays.length ? (
-          <div className="mt-3">
-            <p className="mb-2 text-sm text-muted">انقل اليوم داخل هذا الأسبوع</p>
-            <div className="flex flex-wrap gap-2">
-              {freeDays.map((d) => (
-                <Btn
-                  key={iso(d)}
-                  variant="ghost"
-                  className="min-h-11 px-3 text-sm"
-                  onClick={() => update((current) => moveGymDay(current, today, d.getDay()))}
-                >
-                  {DAY_NAMES[d.getDay()]}
-                </Btn>
-              ))}
-            </div>
-          </div>
+        {shifted ? (
+          <p className="mt-3 text-sm text-teal">معك {PLAN_TITLE[coming]}. الترتيب يتبع حضورك ولا يتخطى حصة.</p>
         ) : null}
-        {pastMissed.length && laterFree.length ? (
-          <div className="mt-3">
-            <p className="mb-2 text-sm text-muted">حصة فاتت هذا الأسبوع. انقلها ليوم راحة ما زال أمامك</p>
-            <div className="flex flex-col gap-2">
-              {pastMissed.map((missed) => (
-                <div key={iso(missed)} className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm">{DAY_NAMES[missed.getDay()]}</span>
-                  {laterFree.map((dest) => (
-                    <Btn
-                      key={`${iso(missed)}-${iso(dest)}`}
-                      variant="ghost"
-                      className="min-h-11 px-3 text-sm"
-                      onClick={() => update((current) => moveGymDay(current, missed, dest.getDay()))}
-                    >
-                      إلى {DAY_NAMES[dest.getDay()]}
-                    </Btn>
-                  ))}
-                </div>
-              ))}
+        {attended ? (
+          confirmDelete ? (
+            <div className="mt-3 flex flex-col gap-2">
+              <p className="text-sm">يمسح حضور اليوم فقط، ويرجع ترتيب الحصص خطوة.</p>
+              <div className="grid grid-cols-2 gap-2">
+                <Btn variant="ghost" onClick={() => setConfirmDelete(false)}>
+                  إلغاء
+                </Btn>
+                <Btn
+                  variant="flame"
+                  onClick={() => {
+                    deleteToday(iso(today));
+                    setConfirmDelete(false);
+                  }}
+                >
+                  احذف الحضور
+                </Btn>
+              </div>
             </div>
-          </div>
+          ) : (
+            <Btn variant="quiet" className="mt-2 px-0 text-flame" onClick={() => setConfirmDelete(true)}>
+              احذف حضور اليوم
+            </Btn>
+          )
         ) : null}
       </Card>
 
@@ -201,7 +255,10 @@ export function TrainView({ state, today }: { state: JeetState; today: Date }) {
   const existing = sessionOn(state, today);
   const draft = state.draft?.date === todayKey ? state.draft : null;
   const comeback = inComeback(state, today);
+  const coming = planForDate(state, today);
   const [restLeft, setRestLeft] = useState<number | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [photoNote, setPhotoNote] = useState("");
   useEffect(() => {
     setRestLeft(null);
   }, [draft?.step, draft?.date]);
@@ -211,13 +268,15 @@ export function TrainView({ state, today }: { state: JeetState; today: Date }) {
     return () => window.clearTimeout(timer);
   }, [restLeft]);
 
-  if (!draft && !existing && !isGymDay(state, today)) {
+  if (!draft && !existing && !canTrain(state, today)) {
     return (
       <div className="flex flex-col gap-4">
         <h1 className="text-2xl font-semibold">التمرين</h1>
         <Card className="p-4">
           <p className="font-medium">اليوم راحة</p>
-          <p className="mt-1 text-sm text-muted">الأربعاء والسبت بلا حصة. إذا فاتتك حصة، انقلها إلى هذا اليوم من صفحة اليوم.</p>
+          <p className="mt-1 text-sm text-muted">
+            الأربعاء والسبت راحة. إذا فاتتك حصة، تمارينها تنتقل لليوم الذي تحضر فيه، بالترتيب نفسه.
+          </p>
         </Card>
       </div>
     );
@@ -228,6 +287,9 @@ export function TrainView({ state, today }: { state: JeetState; today: Date }) {
       <div className="flex flex-col gap-4">
         <h1 className="text-2xl font-semibold">التمرين</h1>
         <p className="text-sm text-muted">جدول بيور جيم: خمس حصص، أجهزة فقط، مع مشي في البداية.</p>
+        {DAY_PLAN[today.getDay()] !== coming ? (
+          <Card className="p-4 text-sm text-teal">اليوم تأخذ {PLAN_TITLE[coming]}. الترتيب لا يتخطى حصة فائتة.</Card>
+        ) : null}
         {comeback ? (
           <Card className="p-4 text-sm text-flame">
             رجوع: مجموعتان فقط لكل تمرين، والوزن المقترح أخف بحوالي 15 بالمئة.
@@ -243,6 +305,29 @@ export function TrainView({ state, today }: { state: JeetState; today: Date }) {
             <Btn className="mt-4 w-full" variant="ghost" onClick={() => setDraft(draftFromSession(existing))}>
               تعديل تسجيل اليوم
             </Btn>
+            {confirmDelete ? (
+              <div className="mt-3 flex flex-col gap-2">
+                <p className="text-sm">يمسح حضور اليوم فقط.</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <Btn variant="ghost" onClick={() => setConfirmDelete(false)}>
+                    إلغاء
+                  </Btn>
+                  <Btn
+                    variant="flame"
+                    onClick={() => {
+                      deleteToday(todayKey);
+                      setConfirmDelete(false);
+                    }}
+                  >
+                    احذف الحضور
+                  </Btn>
+                </div>
+              </div>
+            ) : (
+              <Btn variant="quiet" className="mt-2 px-0 text-flame" onClick={() => setConfirmDelete(true)}>
+                احذف حضور اليوم
+              </Btn>
+            )}
           </Card>
         ) : (
           <div className="flex flex-col gap-3">
@@ -295,27 +380,23 @@ export function TrainView({ state, today }: { state: JeetState; today: Date }) {
         <div className="flex flex-col gap-4 p-4">
           <div className="flex items-start justify-between gap-3">
             <h2 className="text-2xl font-semibold">{def.name}</h2>
-            <label className="relative inline-flex min-h-11 cursor-pointer items-center gap-1 text-sm text-muted">
-              <Camera className="size-4" aria-hidden />
-              صورة جهازي
-              <input
-                type="file"
-                accept="image/*"
-                capture="environment"
-                className="file-clip"
-                onChange={async (event) => {
-                  const file = event.target.files?.[0];
-                  if (!file) return;
-                  const url = await fileToJpeg(file);
-                  if (!url) return;
-                  update((current) => ({
-                    ...current,
-                    photos: { ...current.photos, [def.image]: url },
-                  }));
-                }}
-              />
-            </label>
+            <PhotoPick
+              facing="environment"
+              label="صورة جهازي"
+              className="inline-flex min-h-11 cursor-pointer items-center gap-1 text-sm text-muted"
+              max={960}
+              quality={0.72}
+              onFail={setPhotoNote}
+              onImage={(url) => {
+                setPhotoNote("");
+                update((current) => ({
+                  ...current,
+                  photos: { ...current.photos, [def.image]: url },
+                }));
+              }}
+            />
           </div>
+          {photoNote ? <p className="text-sm text-flame">{photoNote}</p> : null}
           {def.cue ? <p className="text-sm text-muted">{def.cue}</p> : null}
           {def.kind === "strength" && def.reps ? (
             <p className="text-sm text-muted">
@@ -457,7 +538,7 @@ export function MeasureView({ state, today }: { state: JeetState; today: Date })
   const [waist, setWaist] = useState<number | null>(current?.waist ?? null);
   const [weight, setWeight] = useState<number | null>(current?.weight ?? null);
   const [saved, setSaved] = useState(false);
-  const [shotError, setShotError] = useState(false);
+  const [shotError, setShotError] = useState("");
   const [openShot, setOpenShot] = useState<BodyShot | null>(null);
   useEffect(() => {
     if (!current) return;
@@ -493,29 +574,19 @@ export function MeasureView({ state, today }: { state: JeetState; today: Date })
         <p className="text-sm text-muted">
           مرة في الأسبوع، ويفضّل الجمعة. نفس المسافة، نفس الإضاءة، ونفس الوقفة. الصورة تبقى على الجهاز.
         </p>
-        <label className="inline-flex min-h-12 cursor-pointer items-center justify-center gap-2 rounded-2xl bg-teal px-4 text-fg">
-          <Camera className="size-4" aria-hidden />
-          صوّر هذا الأسبوع
-          <input
-            type="file"
-            accept="image/*"
-            capture="user"
-            className="file-clip"
-            onChange={async (event) => {
-              const file = event.target.files?.[0];
-              event.target.value = "";
-              if (!file) return;
-              const image = await fileToJpeg(file, 720, 0.66);
-              if (!image) {
-                setShotError(true);
-                return;
-              }
-              saveBodyShot({ date: key, image });
-              setShotError(false);
-            }}
-          />
-        </label>
-        {shotError ? <p className="text-sm text-flame">تعذّر حفظ الصورة.</p> : null}
+        <PhotoPick
+          facing="user"
+          label="صوّر هذا الأسبوع"
+          className="inline-flex min-h-12 w-full cursor-pointer items-center justify-center gap-2 rounded-2xl bg-teal px-4 text-fg"
+          max={720}
+          quality={0.66}
+          onFail={setShotError}
+          onImage={(image) => {
+            saveBodyShot({ date: key, image });
+            setShotError("");
+          }}
+        />
+        {shotError ? <p className="text-sm text-flame">{shotError}</p> : null}
         {state.bodyShots.length ? (
           <div className="flex gap-2 overflow-x-auto pb-1" dir="ltr">
             {[...state.bodyShots]
@@ -598,7 +669,9 @@ export function SettingsView({ state, onTab }: { state: JeetState; onTab: (tab: 
       <h1 className="text-2xl font-semibold">الإعدادات</h1>
       <Card className="p-4">
         <p className="font-medium">جدول الأسبوع</p>
-        <p className="mt-1 text-sm text-muted">ثابت على أيام بيور جيم. الأربعاء والسبت راحة، ويمكن نقل حصة فائتة إليهما من صفحة اليوم.</p>
+        <p className="mt-1 text-sm text-muted">
+          ثابت على أيام بيور جيم. إذا فاتك يوم، تمارينه تنتقل لليوم الذي تحضر فيه دون تخطي الترتيب. الأربعاء والسبت للتعويض.
+        </p>
         <ul className="mt-3 flex flex-col gap-2 text-sm">
           {[
             ["الأحد", "دفع · صدر وكتف وترايسِبس"],
