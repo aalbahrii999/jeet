@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Camera, Flame } from "lucide-react";
-import { defById, PLAN_TITLE } from "./plan";
+import { PLAN_TITLE, slotFor } from "./plan";
 import {
   DAY_NAMES,
   createDraft,
@@ -10,28 +10,32 @@ import {
   inComeback,
   isGymDay,
   iso,
+  measuredThisWeek,
   motivation,
   moveGymDay,
+  readyToBump,
+  repCeiling,
   sessionOn,
+  shotThisWeek,
   weekdayChips,
   weekProgress,
 } from "./logic";
-import { saveMeasure, saveSession, setDraft, update, replaceState, defaultState } from "./store";
+import { defaultState, replaceState, saveBodyShot, saveMeasure, saveSession, setDraft, update } from "./store";
 import { Btn, Card, Field, MachinePhoto } from "./ui";
-import type { Draft, ExerciseLog, JeetState, TabId } from "./types";
+import type { BodyShot, Draft, ExerciseLog, JeetState, TabId } from "./types";
 import { APP_VERSION } from "./types";
 import { androidBridge } from "./native";
 
-async function fileToJpeg(file: File): Promise<string> {
+async function fileToJpeg(file: File, max = 960, quality = 0.72): Promise<string> {
   const bitmap = await createImageBitmap(file);
-  const scale = Math.min(1, 960 / bitmap.width);
+  const scale = Math.min(1, max / Math.max(bitmap.width, bitmap.height));
   const canvas = document.createElement("canvas");
   canvas.width = Math.max(1, Math.round(bitmap.width * scale));
   canvas.height = Math.max(1, Math.round(bitmap.height * scale));
   const ctx = canvas.getContext("2d");
   if (!ctx) return "";
   ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
-  return canvas.toDataURL("image/jpeg", 0.72);
+  return canvas.toDataURL("image/jpeg", quality);
 }
 
 function patchLog(draft: Draft, index: number, log: ExerciseLog) {
@@ -43,12 +47,15 @@ export function HomeView({
   state,
   today,
   onTrain,
+  onMeasure,
 }: {
   state: JeetState;
   today: Date;
   onTrain: () => void;
+  onMeasure: () => void;
 }) {
-  const done = Math.min(weekProgress(state, today), 3);
+  const target = state.gymDays.length || 5;
+  const done = Math.min(weekProgress(state, today), target);
   const gym = isGymDay(state, today);
   const attended = Boolean(sessionOn(state, today));
   const comeback = inComeback(state, today);
@@ -57,6 +64,13 @@ export function HomeView({
   const remind = gym && !attended && hour >= state.reminder && state.reminders;
   const days = effectiveDays(state, today);
   const freeDays = weekdayChips(today).filter((d) => !days.includes(d.getDay()));
+  const needMeasure = !measuredThisWeek(state, today);
+  const needShot = !shotThisWeek(state, today);
+  const todayKey = iso(today);
+  const pastMissed = weekdayChips(today).filter(
+    (day) => iso(day) < todayKey && days.includes(day.getDay()) && !sessionOn(state, day),
+  );
+  const laterFree = weekdayChips(today).filter((day) => iso(day) >= todayKey && !days.includes(day.getDay()));
 
   let action = "اليوم راحة. الستريك محمي";
   if (state.draft?.date === iso(today)) action = "كمّل تمرين اليوم";
@@ -80,12 +94,12 @@ export function HomeView({
         />
         <p className="mt-2 text-6xl font-semibold tabular-nums leading-none">{state.streak}</p>
         <p className="mt-2 text-sm text-muted">
-          {state.ember ? "اللهب خافت حتى تكمل أسبوع رجوع" : "أسابيع متتالية بثلاثة أيام"}
+          {state.ember ? "اللهب خافت حتى تكمل أسبوع رجوع" : "أسابيع متتالية بخمس حصص"}
         </p>
       </div>
 
       <div className="flex items-center justify-center gap-3" aria-label="تقدم الأسبوع">
-        {[0, 1, 2].map((slot) => (
+        {Array.from({ length: target }, (_, slot) => (
           <span
             key={slot}
             className={`size-4 rounded-full ${slot < done ? "bg-teal" : "bg-raised"}`}
@@ -93,10 +107,12 @@ export function HomeView({
         ))}
       </div>
       <p className="-mt-2 text-center text-sm text-muted">
-        هذا الأسبوع <span dir="ltr">{done}/3</span>
+        هذا الأسبوع <span dir="ltr">{done}/{target}</span>
       </p>
-      {done < 3 ? (
-        <p className="text-center text-sm text-flame">باقي {3 - done} {3 - done === 1 ? "يوم" : "أيام"} قبل ما يبرد اللهب</p>
+      {done < target ? (
+        <p className="text-center text-sm text-flame">
+          باقي {target - done} {target - done === 1 ? "حصة" : "حصص"} قبل ما يبرد اللهب
+        </p>
       ) : (
         <p className="text-center text-sm text-teal">هذا الأسبوع مكتمل</p>
       )}
@@ -112,7 +128,7 @@ export function HomeView({
         </p>
         {comeback ? (
           <p className="mt-3 text-sm text-flame">
-            وضع الرجوع: أوزان أخف، أو ابدأ بجلسة 20 دقيقة.
+            وضع الرجوع: مجموعتان فقط، والوزن أخف بحوالي 15 بالمئة.
             {gap !== null && gap >= 7 ? ` آخر حضور قبل ${gap} يوم.` : ""}
           </p>
         ) : null}
@@ -137,11 +153,45 @@ export function HomeView({
             </div>
           </div>
         ) : null}
+        {pastMissed.length && laterFree.length ? (
+          <div className="mt-3">
+            <p className="mb-2 text-sm text-muted">حصة فاتت هذا الأسبوع. انقلها ليوم راحة ما زال أمامك</p>
+            <div className="flex flex-col gap-2">
+              {pastMissed.map((missed) => (
+                <div key={iso(missed)} className="flex flex-wrap items-center gap-2">
+                  <span className="text-sm">{DAY_NAMES[missed.getDay()]}</span>
+                  {laterFree.map((dest) => (
+                    <Btn
+                      key={`${iso(missed)}-${iso(dest)}`}
+                      variant="ghost"
+                      className="min-h-11 px-3 text-sm"
+                      onClick={() => update((current) => moveGymDay(current, missed, dest.getDay()))}
+                    >
+                      إلى {DAY_NAMES[dest.getDay()]}
+                    </Btn>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
       </Card>
 
       <Card className="p-4">
         <p className="text-lg font-medium leading-relaxed">{motivation(state, today)}</p>
       </Card>
+      {needMeasure || needShot ? (
+        <Card className="p-4">
+          <p className="font-medium">{today.getDay() === 5 ? "يوم القياس" : "قياس هذا الأسبوع"}</p>
+          <p className="mt-1 text-sm text-muted">
+            {needMeasure ? "الوزن والخصر عند السرّة. " : ""}
+            {needShot ? "وصورة للجسم بنفس الوقفة والإضاءة." : ""}
+          </p>
+          <Btn className="mt-4 w-full" onClick={onMeasure}>
+            افتح القياس
+          </Btn>
+        </Card>
+      ) : null}
     </div>
   );
 }
@@ -151,23 +201,44 @@ export function TrainView({ state, today }: { state: JeetState; today: Date }) {
   const existing = sessionOn(state, today);
   const draft = state.draft?.date === todayKey ? state.draft : null;
   const comeback = inComeback(state, today);
+  const [restLeft, setRestLeft] = useState<number | null>(null);
+  useEffect(() => {
+    setRestLeft(null);
+  }, [draft?.step, draft?.date]);
+  useEffect(() => {
+    if (restLeft === null || restLeft <= 0) return;
+    const timer = window.setTimeout(() => setRestLeft((value) => (value === null ? null : value - 1)), 1000);
+    return () => window.clearTimeout(timer);
+  }, [restLeft]);
+
+  if (!draft && !existing && !isGymDay(state, today)) {
+    return (
+      <div className="flex flex-col gap-4">
+        <h1 className="text-2xl font-semibold">التمرين</h1>
+        <Card className="p-4">
+          <p className="font-medium">اليوم راحة</p>
+          <p className="mt-1 text-sm text-muted">الأربعاء والسبت بلا حصة. إذا فاتتك حصة، انقلها إلى هذا اليوم من صفحة اليوم.</p>
+        </Card>
+      </div>
+    );
+  }
 
   if (!draft) {
     return (
       <div className="flex flex-col gap-4">
         <h1 className="text-2xl font-semibold">التمرين</h1>
-        <p className="text-sm text-muted">
-          خطة أجهزة ثابتة مع مشي في البداية والنهاية. لا أوزان حرة.
-        </p>
+        <p className="text-sm text-muted">جدول بيور جيم: خمس حصص، أجهزة فقط، مع مشي في البداية.</p>
         {comeback ? (
-          <Card className="p-4 text-sm text-flame">الأوزان المقترحة أقل بحوالي 15 بالمئة لأنك في وضع الرجوع.</Card>
+          <Card className="p-4 text-sm text-flame">
+            رجوع: مجموعتان فقط لكل تمرين، والوزن المقترح أخف بحوالي 15 بالمئة.
+          </Card>
         ) : null}
         {existing ? (
           <Card className="p-4">
             <p className="font-medium">سجّلت {PLAN_TITLE[existing.plan]} اليوم</p>
             <p className="mt-1 text-sm text-muted">
               {existing.kind === "min" ? "جلسة قصيرة" : "جلسة كاملة"} · الأسبوع{" "}
-              <span dir="ltr">{Math.min(weekProgress(state, today), 3)}/3</span>
+              <span dir="ltr">{Math.min(weekProgress(state, today), state.gymDays.length)}/{state.gymDays.length}</span>
             </p>
             <Btn className="mt-4 w-full" variant="ghost" onClick={() => setDraft(draftFromSession(existing))}>
               تعديل تسجيل اليوم
@@ -179,9 +250,9 @@ export function TrainView({ state, today }: { state: JeetState; today: Date }) {
               ابدأ الجلسة الكاملة
             </Btn>
             <Btn className="w-full" variant="ghost" onClick={() => setDraft(createDraft(state, today, "min"))}>
-              جلسة 20 دقيقة
+              جلسة قصيرة
             </Btn>
-            <p className="text-sm text-muted">الجلسة القصيرة تحسب حضوراً وتحمي الستريك.</p>
+            <p className="text-sm text-muted">إحماء وجهازان. تحسب حضورًا وتحمي الستريك.</p>
           </div>
         )}
       </div>
@@ -190,22 +261,10 @@ export function TrainView({ state, today }: { state: JeetState; today: Date }) {
 
   const log = draft.logs[draft.step];
   if (!log) return null;
-  const def = defById(log.exerciseId);
-  const alt = def.altId ? defById(def.altId) : null;
+  const def = slotFor(draft.plan, log.exerciseId);
   const lastStep = draft.step === draft.logs.length - 1;
-
-  function swap() {
-    if (!alt || !draft) return;
-    const kg = log.sets[0]?.kg ?? null;
-    const replacement: ExerciseLog =
-      alt.kind === "walk"
-        ? log
-        : {
-            exerciseId: alt.id,
-            sets: Array.from({ length: alt.sets }, () => ({ kg, reps: kg ? 10 : null })),
-          };
-    patchLog(draft, draft.step, replacement);
-  }
+  const ceiling = repCeiling(def.reps);
+  const bump = def.kind === "strength" && !comeback && readyToBump(state, def.id, ceiling);
 
   function finish() {
     if (!draft) return;
@@ -258,6 +317,20 @@ export function TrainView({ state, today }: { state: JeetState; today: Date }) {
             </label>
           </div>
           {def.cue ? <p className="text-sm text-muted">{def.cue}</p> : null}
+          {def.kind === "strength" && def.reps ? (
+            <p className="text-sm text-muted">
+              <span dir="ltr">{def.reps}</span>
+              {def.rest ? (
+                <>
+                  {" "}
+                  · راحة <span dir="ltr">{def.rest}</span> ث
+                </>
+              ) : null}
+            </p>
+          ) : null}
+          {bump ? (
+            <p className="text-sm text-teal">وصلت أعلى المدى في حصتين. ارفع الوزن درجة صغيرة.</p>
+          ) : null}
           {def.kind === "walk" && log.walk ? (
             <div className="flex flex-col gap-3">
               <Field
@@ -324,11 +397,36 @@ export function TrainView({ state, today }: { state: JeetState; today: Date }) {
               >
                 كرّر المجموعة الأولى
               </Btn>
+              {def.rest ? (
+                <Btn variant="ghost" onClick={() => setRestLeft(def.rest ?? 0)}>
+                  {restLeft === null
+                    ? "ابدأ الراحة"
+                    : restLeft > 0
+                      ? `راحة ${String(Math.floor(restLeft / 60)).padStart(1, "0")}:${String(restLeft % 60).padStart(2, "0")}`
+                      : "انتهت الراحة"}
+                </Btn>
+              ) : null}
             </div>
           )}
-          {alt ? (
-            <Btn variant="ghost" onClick={swap}>
-              الجهاز مأخوذ · بدّل إلى {alt.name}
+          {def.id === "walk-out" ? (
+            <Btn
+              variant="ghost"
+              onClick={() => {
+                const logs = draft.logs.filter((_, index) => index !== draft.step);
+                if (draft.step >= logs.length) {
+                  saveSession({
+                    id: `${draft.date}-${draft.plan}`,
+                    date: draft.date,
+                    plan: draft.plan,
+                    kind: draft.kind,
+                    exercises: logs,
+                  });
+                  return;
+                }
+                setDraft({ ...draft, logs, step: Math.min(draft.step, logs.length - 1) });
+              }}
+            >
+              تخطّ المشي
             </Btn>
           ) : null}
         </div>
@@ -359,6 +457,8 @@ export function MeasureView({ state, today }: { state: JeetState; today: Date })
   const [waist, setWaist] = useState<number | null>(current?.waist ?? null);
   const [weight, setWeight] = useState<number | null>(current?.weight ?? null);
   const [saved, setSaved] = useState(false);
+  const [shotError, setShotError] = useState(false);
+  const [openShot, setOpenShot] = useState<BodyShot | null>(null);
   useEffect(() => {
     if (!current) return;
     setWaist(current.waist);
@@ -388,6 +488,62 @@ export function MeasureView({ state, today }: { state: JeetState; today: Date })
         </Btn>
         {saved ? <p className="col-span-2 text-sm text-teal">تم الحفظ</p> : null}
       </Card>
+      <Card className="flex flex-col gap-3 p-4">
+        <h2 className="text-lg font-semibold">صورة الجسم</h2>
+        <p className="text-sm text-muted">
+          مرة في الأسبوع، ويفضّل الجمعة. نفس المسافة، نفس الإضاءة، ونفس الوقفة. الصورة تبقى على الجهاز.
+        </p>
+        <label className="inline-flex min-h-12 cursor-pointer items-center justify-center gap-2 rounded-2xl bg-teal px-4 text-fg">
+          <Camera className="size-4" aria-hidden />
+          صوّر هذا الأسبوع
+          <input
+            type="file"
+            accept="image/*"
+            capture="user"
+            className="file-clip"
+            onChange={async (event) => {
+              const file = event.target.files?.[0];
+              event.target.value = "";
+              if (!file) return;
+              const image = await fileToJpeg(file, 720, 0.66);
+              if (!image) {
+                setShotError(true);
+                return;
+              }
+              saveBodyShot({ date: key, image });
+              setShotError(false);
+            }}
+          />
+        </label>
+        {shotError ? <p className="text-sm text-flame">تعذّر حفظ الصورة.</p> : null}
+        {state.bodyShots.length ? (
+          <div className="flex gap-2 overflow-x-auto pb-1" dir="ltr">
+            {[...state.bodyShots]
+              .sort((a, b) => (a.date < b.date ? -1 : 1))
+              .map((shot) => (
+                <button key={shot.date} type="button" className="shrink-0" onClick={() => setOpenShot(shot)}>
+                  <img src={shot.image} alt="" className="h-28 w-20 rounded-xl object-cover" />
+                  <span className="mt-1 block text-center text-[10px] text-muted" dir="ltr">
+                    {shot.date.slice(5)}
+                  </span>
+                </button>
+              ))}
+          </div>
+        ) : (
+          <p className="text-sm text-muted">بعد أول صورة يظهر الشريط من الأقدم إلى الأحدث.</p>
+        )}
+      </Card>
+      {openShot ? (
+        <div className="fixed inset-0 z-40 flex flex-col bg-bg/95 p-5" role="dialog">
+          <button type="button" className="mb-3 self-start text-sm text-muted" onClick={() => setOpenShot(null)}>
+            إغلاق
+          </button>
+          <img src={openShot.image} alt="" className="max-h-[70dvh] w-full rounded-2xl object-contain" />
+          <p className="mt-3 text-center text-sm text-muted" dir="ltr">
+            {openShot.date}
+          </p>
+        </div>
+      ) : null}
       <Card className="p-4">
         <h2 className="mb-3 text-lg font-semibold">خط الخصر</h2>
         {rows.length < 2 ? (
@@ -422,7 +578,6 @@ function WaistChart({ rows }: { rows: { name: string; waist: number }[] }) {
 }
 
 export function SettingsView({ state, onTab }: { state: JeetState; onTab: (tab: TabId) => void }) {
-  const [swapFrom, setSwapFrom] = useState<number | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
   const [importError, setImportError] = useState(false);
   const [perm, setPerm] = useState("");
@@ -438,43 +593,28 @@ export function SettingsView({ state, onTab }: { state: JeetState; onTab: (tab: 
     };
   }, []);
 
-  function chooseDay(dow: number) {
-    if (state.gymDays.includes(dow)) {
-      setSwapFrom(dow);
-      return;
-    }
-    if (swapFrom === null) return;
-    update((current) => {
-      const gymDays = current.gymDays.map((day) => (day === swapFrom ? dow : day));
-      return { ...current, gymDays };
-    });
-    setSwapFrom(null);
-  }
-
   return (
     <div className="flex flex-col gap-4">
       <h1 className="text-2xl font-semibold">الإعدادات</h1>
       <Card className="p-4">
-        <p className="font-medium">أيام النادي</p>
-        <p className="mt-1 text-sm text-muted">
-          ثلاثة أيام فقط. اضغط يوماً محدداً ثم يوماً آخر لاستبداله.
-          {swapFrom !== null ? ` الاستبدال من ${DAY_NAMES[swapFrom]}.` : ""}
-        </p>
-        <div className="mt-3 grid grid-cols-4 gap-2">
-          {DAY_NAMES.map((name, dow) => {
-            const on = state.gymDays.includes(dow);
-            return (
-              <button
-                key={name}
-                type="button"
-                onClick={() => chooseDay(dow)}
-                className={`min-h-12 rounded-xl text-sm ${on ? "bg-teal text-fg" : "bg-raised text-muted"} ${swapFrom === dow ? "outline outline-2 outline-flame" : ""}`}
-              >
-                {name}
-              </button>
-            );
-          })}
-        </div>
+        <p className="font-medium">جدول الأسبوع</p>
+        <p className="mt-1 text-sm text-muted">ثابت على أيام بيور جيم. الأربعاء والسبت راحة، ويمكن نقل حصة فائتة إليهما من صفحة اليوم.</p>
+        <ul className="mt-3 flex flex-col gap-2 text-sm">
+          {[
+            ["الأحد", "دفع · صدر وكتف وترايسِبس"],
+            ["الاثنين", "سحب · ظهر وبايسبس"],
+            ["الثلاثاء", "أرجل وسمانة"],
+            ["الأربعاء", "راحة"],
+            ["الخميس", "علوي كامل"],
+            ["الجمعة", "سفلي كامل · يوم القياس"],
+            ["السبت", "راحة"],
+          ].map(([day, title]) => (
+            <li key={day} className="flex items-center justify-between gap-3">
+              <span>{day}</span>
+              <span className="text-muted">{title}</span>
+            </li>
+          ))}
+        </ul>
       </Card>
       <Card className="flex flex-col gap-3 p-4">
         <div className="flex items-center justify-between gap-3">
@@ -489,13 +629,22 @@ export function SettingsView({ state, onTab }: { state: JeetState; onTab: (tab: 
             <span className={`block size-6 rounded-full bg-fg ${state.reminders ? "ms-auto" : ""}`} />
           </button>
         </div>
-        <p className="text-sm text-muted">إشعار في الأيام الثلاثة فقط، في الوقت الذي تختاره. لا يصل في الراحة.</p>
+        <p className="text-sm text-muted">إشعار في أيام الحصص الخمس فقط. والجمعة إشعار إضافي للقياس والصورة.</p>
         <label className="flex flex-col gap-2 text-sm text-muted">
-          الوقت
+          وقت النادي
           <input
             type="time"
             value={state.reminder}
             onChange={(event) => update((current) => ({ ...current, reminder: event.target.value }))}
+            className="h-12 rounded-xl border border-line bg-raised px-3 text-base text-fg"
+          />
+        </label>
+        <label className="flex flex-col gap-2 text-sm text-muted">
+          جمعة القياس
+          <input
+            type="time"
+            value={state.measureTime}
+            onChange={(event) => update((current) => ({ ...current, measureTime: event.target.value }))}
             className="h-12 rounded-xl border border-line bg-raised px-3 text-base text-fg"
           />
         </label>

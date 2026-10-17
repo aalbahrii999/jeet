@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { BarChart3, Dumbbell, Flame, Ruler, Settings } from "lucide-react";
 import { HomeView, MeasureView, SettingsView, TrainView } from "./views";
 import { StatsView } from "./report";
-import { effectiveDays, iso, sessionOn } from "./logic";
+import { effectiveDays, iso, measuredThisWeek, sessionOn, shotThisWeek } from "./logic";
 import { androidBridge, jeetWindow } from "./native";
 import { setDraft, useJeet } from "./store";
 import type { TabId } from "./types";
@@ -50,6 +50,9 @@ export function JeetApp() {
           days: effectiveDays(state, now),
           skipToday: Boolean(sessionOn(state, now)),
           today: iso(now),
+          measureDay: 5,
+          measureTime: state.measureTime,
+          skipMeasure: measuredThisWeek(state, now) && shotThisWeek(state, now),
         }),
       );
     };
@@ -58,7 +61,7 @@ export function JeetApp() {
     return () => {
       delete jeetWindow().jeetSyncReminders;
     };
-  }, [state.reminders, state.reminder, state.gymDays, state.moves, state.sessions]);
+  }, [state.reminders, state.reminder, state.measureTime, state.gymDays, state.moves, state.sessions, state.measures, state.bodyShots]);
 
   useEffect(() => {
     androidBridge()?.requestNotify?.();
@@ -68,7 +71,9 @@ export function JeetApp() {
     <div className="min-h-dvh bg-bg text-fg">
       <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col px-5 pt-6 pb-28">
         <>
-          {tab === "home" ? <HomeView state={state} today={today} onTrain={() => setTab("train")} /> : null}
+          {tab === "home" ? (
+            <HomeView state={state} today={today} onTrain={() => setTab("train")} onMeasure={() => setTab("measure")} />
+          ) : null}
           {tab === "train" ? <TrainView state={state} today={today} /> : null}
           {tab === "measure" ? <MeasureView state={state} today={today} /> : null}
           {tab === "stats" ? <StatsView state={state} today={today} /> : null}

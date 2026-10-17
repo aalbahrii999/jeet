@@ -1,4 +1,4 @@
-import { defById, exerciseIds } from "./plan";
+import { DAY_PLAN, defById, slotsFor } from "./plan";
 import type { Draft, ExerciseLog, JeetState, PlanId, Session, SessionKind } from "./types";
 import { APP_VERSION } from "./types";
 
@@ -104,9 +104,44 @@ export function sessionOn(state: JeetState, date: Date): Session | undefined {
   return state.sessions.find((s) => s.date === key);
 }
 
-export function planForNewSession(state: JeetState, today: Date): PlanId {
-  const n = sessionsInWeek(state, weekStart(today)).length;
-  return (["A", "B", "C"] as const)[n % 3];
+export function planForDate(state: JeetState, date: Date): PlanId {
+  const dow = date.getDay();
+  const map = state.moves[iso(weekStart(date))] ?? {};
+  for (const [origin, dest] of Object.entries(map)) {
+    if (dest === dow) {
+      const plan = DAY_PLAN[Number(origin)];
+      if (plan) return plan;
+    }
+  }
+  return DAY_PLAN[dow] ?? "push";
+}
+
+export function repCeiling(label?: string): number | null {
+  const nums = label?.match(/\d+/g)?.map(Number) ?? [];
+  if (!nums.length) return null;
+  return Math.max(...nums);
+}
+
+export function readyToBump(state: JeetState, exerciseId: string, ceiling: number | null): boolean {
+  if (!ceiling) return false;
+  const recent = sortedSessions(state)
+    .filter((session) => session.exercises.some((item) => item.exerciseId === exerciseId))
+    .slice(0, 2);
+  if (recent.length < 2) return false;
+  return recent.every((session) => {
+    const log = session.exercises.find((item) => item.exerciseId === exerciseId);
+    return Boolean(log && log.sets.length && log.sets.every((set) => (set.reps ?? 0) >= ceiling));
+  });
+}
+
+export function measuredThisWeek(state: JeetState, today: Date): boolean {
+  const start = iso(weekStart(today));
+  return state.measures.some((item) => item.date >= start);
+}
+
+export function shotThisWeek(state: JeetState, today: Date): boolean {
+  const start = iso(weekStart(today));
+  return state.bodyShots.some((item) => item.date >= start);
 }
 
 export function suggestKg(state: JeetState, exerciseId: string, today: Date): number | null {
@@ -121,29 +156,33 @@ export function suggestKg(state: JeetState, exerciseId: string, today: Date): nu
   return null;
 }
 
-function blankLog(state: JeetState, id: string, today: Date, kind: SessionKind): ExerciseLog {
-  const def = defById(id);
+function defaultReps(label?: string): number {
+  const first = Number(label?.match(/\d+/)?.[0]);
+  return first || 10;
+}
+
+function blankLog(state: JeetState, def: ReturnType<typeof defById>, today: Date, comeback: boolean): ExerciseLog {
   if (def.kind === "walk") {
-    const base = def.walk ?? { minutes: 10, speed: 5, incline: 1 };
-    const minutes = kind === "min" && id.startsWith("walk-out") ? 10 : base.minutes;
-    return { exerciseId: id, sets: [], walk: { ...base, minutes } };
+    const base = def.walk ?? { minutes: 6, speed: 5, incline: 1 };
+    return { exerciseId: def.id, sets: [], walk: { ...base } };
   }
-  const kg = suggestKg(state, id, today);
+  const kg = suggestKg(state, def.id, today);
+  const count = comeback ? Math.min(2, def.sets) : def.sets;
   return {
-    exerciseId: id,
-    sets: Array.from({ length: def.sets }, () => ({ kg, reps: kg ? 10 : null })),
+    exerciseId: def.id,
+    sets: Array.from({ length: count }, () => ({ kg, reps: kg ? defaultReps(def.reps) : null })),
   };
 }
 
 export function createDraft(state: JeetState, today: Date, kind: SessionKind): Draft {
-  const plan = planForNewSession(state, today);
-  const ids = exerciseIds(plan, kind);
+  const plan = planForDate(state, today);
+  const comeback = inComeback(state, today);
   return {
     date: iso(today),
     plan,
     kind,
     step: 0,
-    logs: ids.map((id) => blankLog(state, id, today, kind)),
+    logs: slotsFor(plan, kind).map((slot) => blankLog(state, slot, today, comeback)),
   };
 }
 
@@ -236,8 +275,8 @@ export function buildReport(state: JeetState, today = new Date()): { text: strin
       measures: measures.length,
     },
     constraints: {
-      keep_program: "A/B/C",
-      days_per_week: 3,
+      keep_program: "Sun push / Mon pull / Tue legs / Thu upper / Fri lower",
+      days_per_week: 5,
       machines_only: true,
       include_walk: true,
       no_new_split: true,
@@ -256,7 +295,7 @@ export function buildReport(state: JeetState, today = new Date()): { text: strin
     lastM ? `الوزن: ${lastM.weight} كغ` : "الوزن: غير مسجّل",
     "الأجهزة:",
     ...lifts.map((l) => `- ${l.name}: الآن ${l.now} / قبل 4 أسابيع ${l.previous} / ${trendAr[l.trend]}`),
-    "قيود التحليل: لا تغيّر عدد الأيام عن 3، لا تستبدل جدول A/B/C، لا تقترح علاج هرمونات، تعديل واحد فقط.",
+    "قيود التحليل: لا تغيّر الحصص الخمس ولا أيامها، أجهزة فقط، لا تقترح علاج هرمونات، تعديل واحد فقط.",
     measures.length < 2 || state.sessions.length < 2
       ? "جودة البيانات ضعيفة. إذا نقص القياس أو الأوزان قل ذلك ولا تخترع تقدماً."
       : "جودة البيانات كافية لمقارنة قصيرة.",
@@ -275,19 +314,22 @@ export function asset(path: string): string {
 export function motivation(state: JeetState, today: Date): string {
   const gym = isGymDay(state, today);
   const attended = Boolean(sessionOn(state, today));
-  const done = Math.min(weekProgress(state, today), 3);
+  const target = state.gymDays.length || 5;
+  const done = Math.min(weekProgress(state, today), target);
   const gap = daysSinceLast(state, today);
-  const measured = state.measures.some((item) => item.date >= iso(weekStart(today)));
-  if (gap === null && gym && !attended) return "أول حضور يفتح السجل. عشرون دقيقة تكفي.";
-  if (state.ember && gym && !attended) return "اللهب خافت. جلسة اليوم تعيده، ولو كانت قصيرة.";
+  const measured = measuredThisWeek(state, today);
+  if (gap === null && gym && !attended) return "أول حضور يفتح السجل. جلسة قصيرة تكفي.";
+  if (state.ember && gym && !attended) return "اللهب خافت. حصة اليوم تعيده، ولو كانت قصيرة.";
   if (state.ember && !gym) return "راحة اليوم لا تطفئ اللهب. الأسبوع الجاي يعيده.";
-  if (attended && done >= 3) return "الأسبوع انغلق بثلاثة أيام. الراحة الآن جزء من الخطة.";
-  if (attended) return `حضور اليوم محسوب. صار الأسبوع ${done} من 3.`;
-  if (gym && done === 2) return "باقي يوم ويكتمل الأسبوع. لا تؤجله.";
-  if (gym && inComeback(state, today)) return "الرجوع أخف من الانقطاع. ابدأ بوزن أقل أو بعشرين دقيقة.";
-  if (gym) return "ثلاثة أيام تكفي إذا ثبتّت. اليوم واحد منها.";
-  if (today.getDay() === 0 && !measured) return "الأحد للقياس عند السرّة. نفس المكان، بعد زفير طبيعي.";
-  return "أيام الراحة تحمي الستريك. النادي في أيامه فقط.";
+  if (attended && done >= target) return "الأسبوع انغلق بالخمس حصص. الراحة الآن جزء من الخطة.";
+  if (attended) return `حضور اليوم محسوب. صار الأسبوع ${done} من ${target}.`;
+  if (gym && done === target - 1) return "باقي حصة وتكتمل الخمسة. لا تؤجلها.";
+  if (gym && today.getDay() === 5 && (!measured || !shotThisWeek(state, today))) {
+    return "اليوم سفلي. بعدها الوزن والخصر وصورة الجسم.";
+  }
+  if (gym && inComeback(state, today)) return "الرجوع أخف: مجموعتان فقط، ووزن أقل قليلًا.";
+  if (gym) return "خمسة أيام ثابتة. اليوم واحد منها.";
+  return "الأربعاء والسبت راحة. الراحة تحمي الستريك.";
 }
 
 export function attendanceWeeks(state: JeetState, today: Date, count = 8) {
@@ -299,7 +341,7 @@ export function attendanceWeeks(state: JeetState, today: Date, count = 8) {
     rows.push({
       start: iso(week),
       label: iso(week).slice(5),
-      count: Math.min(dates.size, 3),
+      count: Math.min(dates.size, state.gymDays.length || 5),
     });
   }
   return rows;
@@ -334,6 +376,7 @@ export type ReportModel = {
     }[];
   }[];
   lifts: { name: string; last: number | null; prev: number | null }[];
+  shots: { date: string; image: string }[];
   weak: boolean;
 };
 
@@ -349,6 +392,9 @@ export function reportModel(state: JeetState, today = new Date()): ReportModel {
     "leg-press",
     "leg-ext",
     "leg-curl",
+    "calf",
+    "hip-abduction",
+    "lat-ind",
   ];
   return {
     generated: iso(today),
@@ -389,6 +435,7 @@ export function reportModel(state: JeetState, today = new Date()): ReportModel {
         prev: found[1] ? bestKg(found[1], id) : null,
       };
     }),
+    shots: [...state.bodyShots].sort((a, b) => (a.date < b.date ? -1 : 1)).slice(-8),
     weak: measures.length < 2 || sessions.length < 2,
   };
 }

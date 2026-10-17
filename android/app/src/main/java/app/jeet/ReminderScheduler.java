@@ -42,6 +42,9 @@ public final class ReminderScheduler {
                     .putString("days", days.toString())
                     .putBoolean("skipToday", object.optBoolean("skipToday", false))
                     .putString("today", object.optString("today", ""))
+                    .putInt("measureDay", object.optInt("measureDay", 5))
+                    .putString("measureTime", object.optString("measureTime", "09:00"))
+                    .putBoolean("skipMeasure", object.optBoolean("skipMeasure", false))
                     .apply();
         } catch (Exception ignored) {
             // Keep the previous schedule if the payload is unreadable.
@@ -53,11 +56,12 @@ public final class ReminderScheduler {
         AlarmManager alarms = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
         if (alarms == null) return;
         for (int day = 0; day < 7; day++) {
-            alarms.cancel(pending(context, day));
+            alarms.cancel(pending(context, 100 + day, "gym"));
         }
+        alarms.cancel(pending(context, 300, "measure"));
         SharedPreferences store = prefs(context);
         if (!store.getBoolean("enabled", true)) return;
-        String raw = store.getString("days", "6,1,3");
+        String raw = store.getString("days", "0,1,2,4,5");
         if (raw == null || raw.isEmpty()) return;
         int hour = 18;
         int minute = 0;
@@ -87,7 +91,7 @@ public final class ReminderScheduler {
             if (skipToday && today != null && today.equals(ymd(when))) {
                 when += 7L * 24L * 60L * 60L * 1000L;
             }
-            PendingIntent intent = pending(context, jsDay);
+            PendingIntent intent = pending(context, 100 + jsDay, "gym");
             try {
                 if (canExact(alarms)) {
                     alarms.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, when, intent);
@@ -98,11 +102,41 @@ public final class ReminderScheduler {
                 alarms.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, when, intent);
             }
         }
+        int measureDay = store.getInt("measureDay", 5);
+        if (measureDay < 0 || measureDay > 6) return;
+        int measureHour = 9;
+        int measureMinute = 0;
+        String measureTime = store.getString("measureTime", "09:00");
+        if (measureTime != null && measureTime.contains(":")) {
+            String[] parts = measureTime.split(":");
+            try {
+                measureHour = Integer.parseInt(parts[0]);
+                measureMinute = Integer.parseInt(parts[1]);
+            } catch (NumberFormatException ignored) {
+                measureHour = 9;
+                measureMinute = 0;
+            }
+        }
+        long measureWhen = next(measureDay, measureHour, measureMinute, now);
+        if (store.getBoolean("skipMeasure", false) && today != null && today.equals(ymd(measureWhen))) {
+            measureWhen += 7L * 24L * 60L * 60L * 1000L;
+        }
+        PendingIntent measureIntent = pending(context, 300, "measure");
+        try {
+            if (canExact(alarms)) {
+                alarms.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, measureWhen, measureIntent);
+            } else {
+                alarms.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, measureWhen, measureIntent);
+            }
+        } catch (SecurityException ignored) {
+            alarms.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, measureWhen, measureIntent);
+        }
     }
 
-    public static void show(Context context) {
+    public static void show(Context context, String kind) {
         ensureChannel(context);
         if (!NotificationManagerCompat.from(context).areNotificationsEnabled()) return;
+        boolean measure = "measure".equals(kind);
         Intent open = new Intent(context, MainActivity.class);
         open.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
         PendingIntent tap = PendingIntent.getActivity(
@@ -114,14 +148,14 @@ public final class ReminderScheduler {
         NotificationCompat.Builder builder = new NotificationCompat.Builder(context, CHANNEL)
                 .setSmallIcon(R.drawable.ic_stat)
                 .setContentTitle(context.getString(R.string.notify_title))
-                .setContentText(context.getString(R.string.notify_body))
+                .setContentText(context.getString(measure ? R.string.notify_measure_body : R.string.notify_body))
                 .setColor(0xFFF08A24)
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setCategory(NotificationCompat.CATEGORY_REMINDER)
                 .setAutoCancel(true)
                 .setContentIntent(tap);
         try {
-            NotificationManagerCompat.from(context).notify(42, builder.build());
+            NotificationManagerCompat.from(context).notify(measure ? 43 : 42, builder.build());
         } catch (SecurityException ignored) {
             // Permission was revoked between the check and the post.
         }
@@ -159,12 +193,13 @@ public final class ReminderScheduler {
         return alarms.canScheduleExactAlarms();
     }
 
-    private static PendingIntent pending(Context context, int jsDay) {
+    private static PendingIntent pending(Context context, int request, String kind) {
         Intent intent = new Intent(context, NotifyReceiver.class);
         intent.setAction(ACTION);
+        intent.putExtra("kind", kind);
         return PendingIntent.getBroadcast(
                 context,
-                100 + jsDay,
+                request,
                 intent,
                 PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
         );

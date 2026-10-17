@@ -1,6 +1,7 @@
 import { useEffect, useSyncExternalStore } from "react";
 import { settle } from "./logic";
-import type { Draft, JeetState, Measure, Session } from "./types";
+import { PROGRAM_DAYS } from "./plan";
+import type { BodyShot, Draft, JeetState, Measure, Session } from "./types";
 import { APP_VERSION } from "./types";
 
 const KEY = "jeet.v1";
@@ -8,11 +9,13 @@ const KEY = "jeet.v1";
 export function defaultState(): JeetState {
   return {
     version: APP_VERSION,
-    gymDays: [6, 1, 3],
+    gymDays: [...PROGRAM_DAYS],
     reminder: "18:00",
+    measureTime: "09:00",
     reminders: true,
     sessions: [],
     measures: [],
+    bodyShots: [],
     moves: {},
     photos: {},
     streak: 0,
@@ -40,18 +43,27 @@ function sanitize(raw: unknown): JeetState {
   const base = defaultState();
   if (!raw || typeof raw !== "object") return base;
   const value = raw as Partial<JeetState>;
-  const gymDays = Array.isArray(value.gymDays)
-    ? value.gymDays.filter((n) => typeof n === "number" && n >= 0 && n <= 6).slice(0, 3)
-    : base.gymDays;
   return {
     ...base,
     ...value,
     version: APP_VERSION,
-    gymDays: gymDays.length === 3 ? gymDays : base.gymDays,
+    gymDays: [...PROGRAM_DAYS],
     reminder: typeof value.reminder === "string" ? value.reminder : base.reminder,
+    measureTime: typeof value.measureTime === "string" ? value.measureTime : base.measureTime,
     reminders: value.reminders !== false,
     sessions: Array.isArray(value.sessions) ? value.sessions : [],
     measures: Array.isArray(value.measures) ? value.measures : [],
+    bodyShots: Array.isArray(value.bodyShots)
+      ? value.bodyShots
+          .filter(
+            (item): item is BodyShot =>
+              Boolean(item) &&
+              typeof item === "object" &&
+              typeof (item as BodyShot).date === "string" &&
+              typeof (item as BodyShot).image === "string",
+          )
+          .slice(-30)
+      : [],
     moves: value.moves && typeof value.moves === "object" ? value.moves : {},
     photos: value.photos && typeof value.photos === "object" ? value.photos : {},
     streak: typeof value.streak === "number" ? value.streak : 0,
@@ -90,7 +102,7 @@ export function update(recipe: (current: JeetState) => JeetState) {
 }
 
 export function replaceState(next: JeetState) {
-  state = settle({ ...defaultState(), ...next, version: APP_VERSION });
+  state = settle(sanitize(next));
   save();
   emit();
 }
@@ -126,5 +138,14 @@ export function saveMeasure(measure: Measure) {
     measures: [...current.measures.filter((item) => item.date !== measure.date), measure].sort((a, b) =>
       a.date < b.date ? -1 : 1,
     ),
+  }));
+}
+
+export function saveBodyShot(shot: BodyShot) {
+  update((current) => ({
+    ...current,
+    bodyShots: [...current.bodyShots.filter((item) => item.date !== shot.date), shot]
+      .sort((a, b) => (a.date < b.date ? -1 : 1))
+      .slice(-30),
   }));
 }

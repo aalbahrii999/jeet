@@ -7,7 +7,8 @@ import android.content.Intent;
 public class NotifyReceiver extends BroadcastReceiver {
     @Override
     public void onReceive(Context context, Intent intent) {
-        ReminderScheduler.show(context);
+        String kind = intent == null ? "gym" : intent.getStringExtra("kind");
+        ReminderScheduler.show(context, kind == null ? "gym" : kind);
         ReminderScheduler.schedule(context);
     }
 }

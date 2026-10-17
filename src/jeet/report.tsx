@@ -8,7 +8,7 @@ import { androidBridge } from "./native";
 import type { JeetState, PlanId } from "./types";
 import { Btn, Card } from "./ui";
 
-function Bars({ rows }: { rows: { start: string; label: string; count: number }[] }) {
+function Bars({ rows, max }: { rows: { start: string; label: string; count: number }[]; max: number }) {
   return (
     <div className="flex h-28 items-end gap-1.5" dir="ltr" aria-label="حضور ثمانية أسابيع">
       {rows.map((row) => (
@@ -16,7 +16,7 @@ function Bars({ rows }: { rows: { start: string; label: string; count: number }[
           <div className="flex h-20 w-full items-end">
             <div
               className={`w-full rounded-t-md ${row.count ? "bg-teal" : "bg-line"}`}
-              style={{ height: row.count ? `${Math.max(18, (row.count / 3) * 100)}%` : "8px" }}
+              style={{ height: row.count ? `${Math.max(18, (row.count / max) * 100)}%` : "8px" }}
             />
           </div>
           <span className="text-[10px] tabular-nums text-muted">{row.label}</span>
@@ -74,12 +74,13 @@ function ReportSheet({ model }: { model: ReportModel }) {
     sessions: model.sessions,
     lifts: model.lifts,
     constraints: {
-      days_per_week: 3,
-      keep_split: "A push / B pull / C legs",
+      days_per_week: 5,
+      keep_split: "Sun push / Mon pull / Tue legs / Thu upper / Fri lower",
       machines_only: true,
       one_change_only: true,
       no_hormone_advice: true,
       if_data_weak: "say so, do not invent progress",
+      body_photos: model.shots.map((shot) => shot.date),
     },
   };
   return (
@@ -92,8 +93,9 @@ function ReportSheet({ model }: { model: ReportModel }) {
 
       <h2 style={{ marginTop: 28, fontSize: 18 }}>قيود على أي تحليل</h2>
       <p style={{ lineHeight: 1.7 }}>
-        ثلاثة أيام فقط. الجدول ثابت: A دفع، B سحب، C أرجل، أجهزة لا أوزان حرة، ومعها مشي. تعديل واحد فقط. لا نصيحة
-        هرمونات ولا تشخيص. إذا القياس أو الأوزان ناقصة فقل ذلك ولا تخترع تقدماً.
+        خمس حصص ثابتة: الأحد دفع، الاثنين سحب، الثلاثاء أرجل، الخميس علوي، الجمعة سفلي. الأربعاء والسبت راحة.
+        أجهزة فقط لا أوزان حرة. تعديل واحد فقط. لا نصيحة هرمونات ولا تشخيص. إذا القياس أو الصور أو الأوزان ناقصة فقل ذلك
+        ولا تخترع تقدماً.
       </p>
 
       <h2 style={{ fontSize: 18 }}>الحضور</h2>
@@ -113,7 +115,7 @@ function ReportSheet({ model }: { model: ReportModel }) {
           {model.weeks.map((week) => (
             <tr key={week.start}>
               <td style={{ padding: 6, borderBottom: "1px solid #eee7dc" }}>{week.start}</td>
-              <td style={{ padding: 6, borderBottom: "1px solid #eee7dc" }}>{`\u202A${week.count} / 3\u202C`}</td>
+              <td style={{ padding: 6, borderBottom: "1px solid #eee7dc" }}>{`\u202A${week.count} / ${model.target}\u202C`}</td>
             </tr>
           ))}
         </tbody>
@@ -153,6 +155,20 @@ function ReportSheet({ model }: { model: ReportModel }) {
           {lift.name}: آخر وزن {lift.last ?? "—"} · الذي قبله {lift.prev ?? "—"}
         </p>
       ))}
+
+      <h2 style={{ fontSize: 18 }}>صور الجسم</h2>
+      {model.shots.length ? (
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {model.shots.map((shot) => (
+            <figure key={shot.date} style={{ margin: 0, width: 120 }}>
+              <img src={shot.image} alt="" style={{ width: 120, height: 160, objectFit: "cover", borderRadius: 8 }} />
+              <figcaption style={{ fontSize: 12, color: "#5c675f" }}>{shot.date}</figcaption>
+            </figure>
+          ))}
+        </div>
+      ) : (
+        <p>لا صور.</p>
+      )}
 
       <h2 style={{ fontSize: 18 }}>الجلسات</h2>
       {model.sessions.length ? (
@@ -281,10 +297,10 @@ export function StatsView({ state, today }: { state: JeetState; today: Date }) {
         <div className="mb-3 flex items-end justify-between">
           <h2 className="text-lg font-semibold">الأسابيع</h2>
           <p className="text-sm tabular-nums text-muted">
-            هذا الأسبوع <span dir="ltr">{Math.min(model.done, 3)}/3</span>
+            هذا الأسبوع <span dir="ltr">{model.done}/{model.target}</span>
           </p>
         </div>
-        <Bars rows={weeks} />
+        <Bars rows={weeks} max={Math.max(model.target, 1)} />
         {state.sessions.length === 0 ? (
           <p className="mt-3 text-sm text-muted">بعد أول حضور يمتلئ العمود.</p>
         ) : null}
@@ -327,6 +343,24 @@ export function StatsView({ state, today }: { state: JeetState; today: Date }) {
               );
             })}
           </ul>
+        )}
+      </Card>
+
+      <Card className="p-4">
+        <h2 className="text-lg font-semibold">صور الجسم</h2>
+        {model.shots.length ? (
+          <div className="mt-3 flex gap-2 overflow-x-auto pb-1" dir="ltr">
+            {model.shots.map((shot) => (
+              <figure key={shot.date} className="m-0 shrink-0">
+                <img src={shot.image} alt="" className="h-28 w-20 rounded-xl object-cover" />
+                <figcaption className="mt-1 text-center text-[10px] text-muted" dir="ltr">
+                  {shot.date.slice(5)}
+                </figcaption>
+              </figure>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-2 text-sm text-muted">صورة كل جمعة من صفحة القياس. تظهر هنا وفي ملف PDF من الأقدم إلى الأحدث.</p>
         )}
       </Card>
 
