@@ -16,8 +16,15 @@ export function MachinePhoto({ image, photos, alt }: { image: string; photos: Re
 }
 export function Field({ label, value, onChange, step = "1", max = 2000, placeholder = "—" }: { label: string; value: number | null; onChange: (value: number | null) => void; step?: string; max?: number; placeholder?: string }) {
   const id = useId(), delta = Number(step) || 1;
-  const change = (number: number) => onChange(Math.min(max, Math.max(0, Math.round(number * 100) / 100)));
-  return <div className="number-field"><label htmlFor={id}>{label}</label><div className="number-control" dir="ltr"><button type="button" onClick={() => change((value ?? 0) - delta)} aria-label={`أنقص ${label}`}>−</button><input id={id} type="number" min="0" max={max} step={step} inputMode={delta < 1 ? "decimal" : "numeric"} value={value ?? ""} placeholder={placeholder} onChange={(event) => { const text = event.target.value; if (text === "") onChange(null); else if (Number.isFinite(Number(text))) change(Number(text)); }} /><button type="button" onClick={() => change((value ?? 0) + delta)} aria-label={`زد ${label}`}>+</button></div></div>;
+  const [raw, setRaw] = useState(value === null ? "" : String(value));
+  useEffect(() => { setRaw(value === null ? "" : String(value)); }, [value]);
+  const change = (number: number) => { const next = Math.min(max, Math.max(0, Math.round(number * 100) / 100)); setRaw(String(next)); onChange(next); };
+  return <div className="number-field"><label htmlFor={id}>{label}</label><div className="number-control" dir="ltr"><button type="button" onClick={() => change((value ?? 0) - delta)} aria-label={`أنقص ${label}`}>−</button><input id={id} type="text" inputMode={delta < 1 ? "decimal" : "numeric"} value={raw} placeholder={placeholder} onBlur={() => setRaw(value === null ? "" : String(value))} onChange={(event) => {
+    const next = event.target.value.replace(/[٠-٩]/g, (digit) => String(digit.charCodeAt(0) - 1632)).replace(/[۰-۹]/g, (digit) => String(digit.charCodeAt(0) - 1776)).replace(/[٫,]/g, ".");
+    if (!/^\d*(?:\.\d{0,2})?$/.test(next)) return;
+    if (next !== "" && next !== "." && Number(next) > max) { change(max); return; }
+    setRaw(next); onChange(next === "" || next === "." ? null : Number(next));
+  }} /><button type="button" onClick={() => change((value ?? 0) + delta)} aria-label={`زد ${label}`}>+</button></div></div>;
 }
 export function Modal({ title, description, onClose, children, wide = false }: { title: string; description?: string; onClose: () => void; children: ReactNode; wide?: boolean }) {
   const ref = useRef<HTMLDivElement>(null), titleId = useId(), descId = useId(), closeRef = useRef(onClose);
