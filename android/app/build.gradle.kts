@@ -37,3 +37,18 @@ configurations.configureEach {
     exclude(group = "org.jetbrains.kotlin", module = "kotlin-stdlib-jdk7")
     exclude(group = "org.jetbrains.kotlin", module = "kotlin-stdlib-jdk8")
 }
+
+val buildWebAssets by tasks.registering(Exec::class) {
+    workingDir(rootProject.projectDir.parentFile)
+    commandLine("npm", "run", "build:apk")
+    inputs.dir(rootProject.projectDir.resolve("../src"))
+    inputs.dir(rootProject.projectDir.resolve("../public/machines"))
+    inputs.file(rootProject.projectDir.resolve("../package-lock.json"))
+    inputs.file(rootProject.projectDir.resolve("../scripts/build-apk.mjs"))
+    outputs.dir(layout.projectDirectory.dir("src/main/assets/www"))
+}
+
+tasks.named("preBuild").configure {
+    dependsOn(buildWebAssets)
+}
+

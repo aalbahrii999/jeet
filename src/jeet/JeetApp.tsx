@@ -6,6 +6,7 @@ import { iso, measuredThisWeek, sessionOn, shotThisWeek } from "./logic";
 import { androidBridge, jeetWindow } from "./native";
 import { setDraft, useJeet } from "./store";
 import type { TabId } from "./types";
+import { RestTimerDock } from "./rest-timer-ui";
 
 const TABS: { id: TabId; label: string; icon: typeof Flame }[] = [
   { id: "home", label: "اليوم", icon: Flame },
@@ -68,8 +69,8 @@ export function JeetApp() {
   }, []);
 
   return (
-    <div className="min-h-dvh bg-bg text-fg">
-      <div className="mx-auto flex min-h-dvh w-full max-w-md flex-col px-5 pt-6 pb-28">
+    <div className="jeet-shell min-h-dvh bg-bg text-fg">
+      <div className="jeet-content mx-auto flex min-h-dvh w-full max-w-md flex-col px-5 pt-6 pb-28">
         <>
           {tab === "home" ? (
             <HomeView state={state} today={today} onTrain={() => setTab("train")} onMeasure={() => setTab("measure")} />
@@ -80,6 +81,7 @@ export function JeetApp() {
           {tab === "settings" ? <SettingsView state={state} onTab={setTab} /> : null}
         </>
       </div>
+      <RestTimerDock />
       <nav className="fixed inset-x-0 bottom-0 z-20 border-t border-line bg-surface pb-[env(safe-area-inset-bottom)]">
         <div className="mx-auto grid max-w-md grid-cols-5">
           {TABS.map((item) => {

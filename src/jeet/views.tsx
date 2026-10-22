@@ -24,6 +24,8 @@ import { Btn, Card, Field, MachinePhoto } from "./ui";
 import type { BodyShot, Draft, ExerciseLog, JeetState, TabId } from "./types";
 import { APP_VERSION } from "./types";
 import { androidBridge, pickDevicePhoto, takeDevicePhoto } from "./native";
+import { RestStart } from "./rest-timer-ui";
+import { cancelRest } from "./rest-timer";
 
 async function fileToJpeg(file: File, max = 960, quality = 0.72): Promise<string> {
   const bitmap = await createImageBitmap(file);
@@ -215,6 +217,7 @@ export function HomeView({
                 <Btn
                   variant="flame"
                   onClick={() => {
+                    cancelRest();
                     deleteToday(iso(today));
                     setConfirmDelete(false);
                   }}
@@ -256,17 +259,8 @@ export function TrainView({ state, today }: { state: JeetState; today: Date }) {
   const draft = state.draft?.date === todayKey ? state.draft : null;
   const comeback = inComeback(state, today);
   const coming = planForDate(state, today);
-  const [restLeft, setRestLeft] = useState<number | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [photoNote, setPhotoNote] = useState("");
-  useEffect(() => {
-    setRestLeft(null);
-  }, [draft?.step, draft?.date]);
-  useEffect(() => {
-    if (restLeft === null || restLeft <= 0) return;
-    const timer = window.setTimeout(() => setRestLeft((value) => (value === null ? null : value - 1)), 1000);
-    return () => window.clearTimeout(timer);
-  }, [restLeft]);
 
   if (!draft && !existing && !canTrain(state, today)) {
     return (
@@ -315,6 +309,7 @@ export function TrainView({ state, today }: { state: JeetState; today: Date }) {
                   <Btn
                     variant="flame"
                     onClick={() => {
+                      cancelRest();
                       deleteToday(todayKey);
                       setConfirmDelete(false);
                     }}
@@ -353,6 +348,7 @@ export function TrainView({ state, today }: { state: JeetState; today: Date }) {
 
   function finish() {
     if (!draft) return;
+    cancelRest();
     saveSession({
       id: `${draft.date}-${draft.plan}`,
       date: draft.date,
@@ -479,13 +475,7 @@ export function TrainView({ state, today }: { state: JeetState; today: Date }) {
                 كرّر المجموعة الأولى
               </Btn>
               {def.rest ? (
-                <Btn variant="ghost" onClick={() => setRestLeft(def.rest ?? 0)}>
-                  {restLeft === null
-                    ? "ابدأ الراحة"
-                    : restLeft > 0
-                      ? `راحة ${String(Math.floor(restLeft / 60)).padStart(1, "0")}:${String(restLeft % 60).padStart(2, "0")}`
-                      : "انتهت الراحة"}
-                </Btn>
+                <RestStart exerciseKey={`${draft.date}:${draft.plan}:${def.id}`} name={def.name} seconds={def.rest} />
               ) : null}
             </div>
           )}
@@ -495,6 +485,7 @@ export function TrainView({ state, today }: { state: JeetState; today: Date }) {
               onClick={() => {
                 const logs = draft.logs.filter((_, index) => index !== draft.step);
                 if (draft.step >= logs.length) {
+                  cancelRest();
                   saveSession({
                     id: `${draft.date}-${draft.plan}`,
                     date: draft.date,
@@ -805,3 +796,4 @@ export function SettingsView({ state, onTab }: { state: JeetState; onTab: (tab: 
     </div>
   );
 }
+

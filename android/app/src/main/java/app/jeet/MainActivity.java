@@ -128,6 +128,15 @@ public class MainActivity extends AppCompatActivity {
     }
 
     @Override
+    protected void onResume() {
+        super.onResume();
+        if (web != null) {
+            web.onResume();
+            web.evaluateJavascript("window.dispatchEvent(new Event('focus'))", null);
+        }
+    }
+
+    @Override
     public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == NOTIFY_REQUEST && web != null) {
@@ -139,6 +148,36 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private class Bridge {
+        @JavascriptInterface
+        public String startRestTimer(String payload) {
+            return RestAlarm.start(MainActivity.this, payload);
+        }
+
+        @JavascriptInterface
+        public void cancelRestTimer() {
+            RestAlarm.cancel(MainActivity.this);
+        }
+
+        @JavascriptInterface
+        public String restTimerStatus() {
+            return RestAlarm.status(MainActivity.this);
+        }
+
+        @JavascriptInterface
+        public void openRestAlarmSettings() {
+            runOnUiThread(() -> {
+                if (Build.VERSION.SDK_INT >= 31) {
+                    try {
+                        Intent intent = new Intent(Settings.ACTION_REQUEST_SCHEDULE_EXACT_ALARM);
+                        intent.setData(Uri.parse("package:" + getPackageName()));
+                        startActivity(intent);
+                    } catch (android.content.ActivityNotFoundException ignored) {
+                        Toast.makeText(MainActivity.this, "تعذّر فتح إعداد التنبيه", Toast.LENGTH_SHORT).show();
+                    }
+                }
+            });
+        }
+
         @JavascriptInterface
         public void exit() {
             runOnUiThread(MainActivity.this::finish);
@@ -344,3 +383,4 @@ public class MainActivity extends AppCompatActivity {
         return file;
     }
 }
+
