@@ -10,7 +10,7 @@ fs.mkdirSync(output, { recursive: true });
   const browser=await chromium.launch({headless:true,args:['--no-sandbox']});
   try{
     const page=await browser.newPage({viewport:{width:390,height:844},deviceScaleFactor:1});
-    const errors=[];page.on('pageerror',e=>errors.push(e.message));
+    const errors=[];page.on('pageerror',e=>{errors.push(e.message);console.error('BROWSER ERROR:',e.stack)});
     await page.goto('file://' + path.join(root, 'android/app/src/main/assets/www/index.html'));await page.getByRole('heading',{name:/نسخة أقوى منك/}).waitFor();
     await page.screenshot({path:path.join(output, 'home.png'),fullPage:true});
     console.log('Home rendered.');

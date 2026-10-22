@@ -35,6 +35,7 @@ function decodeSet(raw: unknown): StrengthSet {
 function decodeLog(raw: unknown): ExerciseLog {
   const x = object(raw, "سجل التمرين");
   const log: ExerciseLog = { exerciseId: text(x.exerciseId, "معرّف التمرين"), sets: list(x.sets, "المجموعات").map(decodeSet) };
+  if (log.sets.length > 10) return bad("عدد مجموعات التمرين");
   if (x.definition !== undefined) { log.definition = validateExercise(x.definition); if (log.definition.id !== log.exerciseId) return bad("هوية التمرين"); }
   if (typeof x.completed === "boolean") log.completed = x.completed;
   if (x.walk) { const w = object(x.walk, "الكارديو"); log.walk = { minutes: number(w.minutes, "الدقائق", 0, 240), speed: number(w.speed, "السرعة", 0, 100), incline: number(w.incline, "الميل", 0, 50) }; }
@@ -44,6 +45,7 @@ function decodeSession(raw: unknown): Session {
   const x = object(raw, "الحصة");
   if (x.kind !== "full" && x.kind !== "min") return bad("نوع الحصة");
   const session: Session = { id: text(x.id, "الحصة"), date: date(x.date), plan: text(x.plan, "الجدول"), kind: x.kind, exercises: list(x.exercises, "التمارين").map(decodeLog) };
+  if (session.exercises.length > 25) return bad("عدد تمارين الحصة");
   if (x.planName !== undefined) session.planName = text(x.planName, "اسم الجدول", 70);
   if (x.durationMinutes !== undefined) session.durationMinutes = number(x.durationMinutes, "مدة الحصة", 0, 1440);
   if (typeof x.comeback === "boolean") session.comeback = x.comeback;
@@ -59,6 +61,7 @@ export function validateState(raw: unknown): JeetState {
   let x = object(raw, "النسخة الاحتياطية");
   if (x.app !== undefined) { if (x.app !== "jeet" || x.schemaVersion !== 2) return bad("إصدار النسخة"); x = object(x.data, "النسخة"); }
   if (typeof x.version !== "string" || !Array.isArray(x.sessions) || !Array.isArray(x.measures) || !Array.isArray(x.gymDays)) return bad("الملف ليس نسخة جيت");
+  if (!/^\d+\.\d+\.\d+/.test(x.version)) return bad("إصدار التطبيق");
   if (x.schemaVersion !== undefined && x.schemaVersion !== 2) return bad("إصدار البيانات");
   const base = defaultState(), legacy = x.schemaVersion !== 2;
   const gymDays = [...new Set(x.gymDays.map((day) => integer(day, "أيام التدريب", 0, 6)))].sort((a, b) => a - b);
