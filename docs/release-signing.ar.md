@@ -8,6 +8,8 @@
 
 لم يُعثر على keystore ضمن ملفات المستودع. احفظه خارج GitHub العام، وأضف قيمه في **Settings → Secrets and variables → Actions → Repository secrets**:
 
+فُحص ملف 1.3.0 المنشور فعليًا في [تشغيل تدقيق التوقيع](https://github.com/aalbahrii999/jeet/actions/runs/39817148708). شهادة SHA-256 المطلوبة هي `66783baeda07818b4c063209a34f69bda7588173ccae96c61b3f95cc7aedaf1c`. نجحت قراءة الشهادة، ثم أوقف المسار الإصدار لأن أسرار المفتاح غير مكتملة. تفاصيل النسخة العامة محفوظة في `release/previous-1.3.0.json`؛ هذه شهادة عامة وليست المفتاح الخاص.
+
 | السر | القيمة |
 | --- | --- |
 | `JEET_SIGNING_KEYSTORE_BASE64` | محتوى ملف keystore الأصلي بترميز Base64 |

@@ -72,7 +72,7 @@ val requireUpdateKey by tasks.registering {
     }
 }
 
-tasks.named("preReleaseBuild").configure {
+tasks.matching { it.name == "preReleaseBuild" }.configureEach {
     dependsOn(requireUpdateKey)
 }
 

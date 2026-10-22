@@ -24,6 +24,7 @@ jobs:
           java-version: "17"
       - run: npm ci
       - run: npm run test:jeet
+      - run: python3 scripts/test-apk-update.py
       - run: npm run typecheck
       - run: npm run build:apk
       - run: npx playwright install --with-deps chromium
