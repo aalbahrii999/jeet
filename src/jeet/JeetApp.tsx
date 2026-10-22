@@ -19,6 +19,9 @@ export function JeetApp() {
   const { state, ready, error } = useJeet(), [tab, setTab] = useState<TabId>("home"), [today, setToday] = useState(() => new Date());
   const hasRest = useHasRestTimer();
   const dateKey = iso(today);
+  const { reminders, reminder, measureTime, gymDays } = state;
+  const skipToday = Boolean(sessionOn(state, today));
+  const skipMeasure = measuredThisWeek(state, today) && shotThisWeek(state, today);
   useEffect(() => {
     const refresh = () => { setToday(new Date()); refreshWeek(); };
     const visible = () => { if (document.visibilityState === "visible") refresh(); };
@@ -38,10 +41,10 @@ export function JeetApp() {
   }, [tab, state.draft]);
   useEffect(() => {
     if (!ready || error) return;
-    const sync = () => androidBridge()?.syncReminder?.(JSON.stringify({ enabled: state.reminders, time: state.reminder, days: state.gymDays, skipToday: Boolean(sessionOn(state, new Date())), today: iso(new Date()), measureDay: 5, measureTime: state.measureTime, skipMeasure: measuredThisWeek(state, new Date()) && shotThisWeek(state, new Date()) }));
+    const sync = () => androidBridge()?.syncReminder?.(JSON.stringify({ enabled: reminders, time: reminder, days: gymDays, skipToday, today: dateKey, measureDay: 5, measureTime, skipMeasure }));
     jeetWindow().jeetSyncReminders = sync; sync();
     return () => { delete jeetWindow().jeetSyncReminders; };
-  }, [ready, error, dateKey, state]);
+  }, [ready, error, dateKey, reminders, reminder, measureTime, gymDays, skipToday, skipMeasure]);
   if (!ready) return <div className="app-content" style={{ minHeight: "100dvh", display: "grid", placeItems: "center" }} role="status"><div><BrandMark /><p className="form-note" style={{ marginTop: 18 }}>نجهّز خطوتك القادمة…</p></div></div>;
   return <div className={`app-shell ${hasRest ? "has-rest" : ""}`}><main className="app-content" id="main-content"><header className="topbar"><BrandMark /><span className="save-status">بياناتك على جهازك</span></header>
     {error ? <div className="notice-banner" role="alert">{error}<button className="text-button" onClick={() => setTab("settings")}>فتح إدارة البيانات</button></div> : null}
