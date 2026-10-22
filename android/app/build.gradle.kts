@@ -14,10 +14,20 @@ android {
         versionName = "2.0.0"
     }
 
+    signingConfigs {
+        create("update") {
+            storeFile = System.getenv("JEET_SIGNING_STORE_FILE")?.let { file(it) }
+            storePassword = System.getenv("JEET_SIGNING_STORE_PASSWORD")
+            keyAlias = System.getenv("JEET_SIGNING_KEY_ALIAS")
+            keyPassword = System.getenv("JEET_SIGNING_KEY_PASSWORD")
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("debug")
+            isDebuggable = false
+            signingConfig = signingConfigs.getByName("update")
         }
     }
 
@@ -50,5 +60,19 @@ val buildWebAssets by tasks.registering(Exec::class) {
 
 tasks.named("preBuild").configure {
     dependsOn(buildWebAssets)
+}
+
+val requireUpdateKey by tasks.registering {
+    doLast {
+        val required = listOf("JEET_SIGNING_STORE_FILE", "JEET_SIGNING_STORE_PASSWORD", "JEET_SIGNING_KEY_ALIAS", "JEET_SIGNING_KEY_PASSWORD")
+        check(required.all { !System.getenv(it).isNullOrBlank() }) {
+            "Release signing requires the original Jeet key. Debug signing is never used for updates."
+        }
+        check(file(System.getenv("JEET_SIGNING_STORE_FILE")).isFile) { "Original signing keystore not found." }
+    }
+}
+
+tasks.named("preReleaseBuild").configure {
+    dependsOn(requireUpdateKey)
 }
 
