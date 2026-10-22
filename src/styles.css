@@ -158,7 +158,7 @@ svg { flex-shrink: 0; }
 .app-shell.has-rest .training-actions { position: static; }
 .rest-timer-dock { position: fixed; inset-inline: 0; bottom: calc(79px + env(safe-area-inset-bottom)); z-index: 30; width: 100%; max-width: 480px; margin-inline: auto; padding-inline: 16px; }
 .rest-timer-dock>div { box-shadow: 0 12px 50px #0009; border-color: #d2f36b60; border-radius: 22px; }.rest-timer-dock .btn { min-height: 43px; padding-block: 9px; }
-.app-shell.has-rest .app-content { padding-bottom: calc(24rem + env(safe-area-inset-bottom)); }
+.app-shell.has-rest .app-content { padding-bottom: calc(19rem + env(safe-area-inset-bottom)); }
 .rest-timer-progress { transition: width 250ms linear; }
 .photo-strip { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 4px; }.photo-strip figure { flex-shrink: 0; width: 91px; }.photo-strip img { width: 91px; height: 121px; object-fit: cover; border-radius: 13px; }.photo-strip figcaption { font-size: 10px; color: var(--color-muted); text-align: center; padding-top: 5px; }.photo-strip button { border: 0; padding: 0; background: none; }
 .measure-numbers { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }.measure-numbers strong { display: block; font-size: 34px; font-weight: 600; }.measure-numbers span { color: var(--color-muted); font-size: 11px; }
