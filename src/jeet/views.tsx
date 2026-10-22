@@ -46,7 +46,7 @@ export function TrainView({ state, today, onLeave }: { state: JeetState; today: 
   }
   const log = draft.logs[draft.step], def = log?.definition ?? defById(log?.exerciseId ?? "", state);
   if (!log) return <p className="form-error">تعذّر فتح الحصة. يمكنك استعادة نسخة البيانات من الإعدادات.</p>;
-  const key = `${draft.date}:${draft.plan}:${def.id}`, last = draft.step === draft.logs.length - 1;
+  const key = `${draft.date}:${draft.plan}:${def.id}`, last = draft.step === draft.logs.length - 1, rest = def.kind === "strength" ? def.rest ?? 90 : 0;
   const patchLog = (next: ExerciseLog) => setDraft({ ...draft, logs: draft.logs.map((item, index) => index === draft.step ? next : item) });
   const completed = draft.logs.reduce((total, item) => total + item.sets.filter((set) => set.done !== false && set.reps !== null).length + (item.completed && item.walk ? 1 : 0), 0);
   const total = draft.logs.reduce((sum, item) => sum + (item.walk ? 1 : item.sets.length), 0);
@@ -70,7 +70,7 @@ export function TrainView({ state, today, onLeave }: { state: JeetState; today: 
     const done = set.done === false || set.done === undefined;
     if (patchLog({ ...log, sets: log.sets.map((item, i) => i === index ? { ...item, done } : item) })) {
       setNote("");
-      if (done && state.autoRest && def.rest) startRest(key, def.name, def.rest);
+      if (done && state.autoRest && rest) startRest(key, def.name, rest);
       else if (!done) cancelRest();
     }
   };
@@ -87,7 +87,7 @@ export function TrainView({ state, today, onLeave }: { state: JeetState; today: 
       <div className="section-heading" style={{ margin: "12px 0 0" }}><button className="text-button" onClick={() => { const first = log.sets[0]; if (first) patchLog({ ...log, sets: log.sets.map((item, i) => i ? { ...first, done: false } : item) }); }}>نسخ أرقام الجولة الأولى</button><span>{suggestKg(state, def.id, today) !== null ? `آخر اقتراح ${suggestKg(state, def.id, today)} كغ` : "أول تسجيل"}</span></div>
     </Card>}
     {note ? <p className="form-error" role="alert">{note}</p> : null}
-    {def.kind === "strength" && def.rest ? <RestStart exerciseKey={key} name={def.name} seconds={def.rest} /> : null}
+    {def.kind === "strength" && rest ? <RestStart exerciseKey={key} name={def.name} seconds={rest} /> : null}
     {log.walk ? <button className="text-button" style={{ justifyContent: "center" }} onClick={() => { if (last) { const current = { ...draft, logs: draft.logs.filter((_, i) => i !== draft.step) }; finish(current); } else setDraft({ ...draft, step: draft.step + 1 }); }}>تخطّ هذا الكارديو</button> : null}
     <div className="training-actions"><Btn variant="ghost" disabled={draft.step === 0} onClick={() => { setNote(""); setDraft({ ...draft, step: draft.step - 1 }); }}><ChevronRight size={19} /><span className="screen-reader">التمرين السابق</span></Btn><Btn onClick={next}>{last ? "إنهاء وحفظ الحصة" : log.walk ? "أكملت · التمرين التالي" : "التمرين التالي"}{last ? <Check size={18} /> : <ChevronLeft size={18} />}</Btn></div>
     <p className="form-note" style={{ textAlign: "center" }}><ShieldCheck size={13} style={{ display: "inline", verticalAlign: "middle" }} /> تُحفظ خطواتك تلقائيًا على جهازك. أكّد كل مجموعة بعد أدائها.</p>
