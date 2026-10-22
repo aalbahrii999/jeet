@@ -1,4 +1,4 @@
-import type { ExerciseDef, PlanId, SessionKind } from "./types";
+import type { ExerciseDef, JeetState, PlanId, SessionKind, WorkoutPlan } from "./types";
 
 export const PROGRAM_DAYS = [0, 1, 2, 4, 5];
 
@@ -137,24 +137,53 @@ function planKey(plan: PlanId): keyof typeof PLANS {
   if (plan === "A") return "push";
   if (plan === "B") return "pull";
   if (plan === "C") return "legs";
-  return plan;
+  return plan in PLANS ? plan as keyof typeof PLANS : "push";
 }
 
-export function slotsFor(plan: PlanId, kind: SessionKind): ExerciseDef[] {
-  const full = PLANS[planKey(plan)];
+export function slotsFor(plan: PlanId, kind: SessionKind, state?: JeetState): ExerciseDef[] {
+  const full = state?.plans.find((item) => item.id === plan)?.exercises ?? PLANS[planKey(plan)];
   if (kind === "full") return full;
   const first = full.filter((item) => item.kind === "strength").slice(0, 2);
-  return [walkIn, ...first];
+  const warmup = full.find((item) => item.kind === "walk");
+  return first.length ? [...(warmup ? [warmup] : []), ...first] : full.slice(0, 2);
 }
 
-export function slotFor(plan: PlanId, exerciseId: string): ExerciseDef {
-  return slotsFor(plan, "full").find((item) => item.id === exerciseId) ?? defById(exerciseId);
+export function slotFor(plan: PlanId, exerciseId: string, state?: JeetState): ExerciseDef {
+  return slotsFor(plan, "full", state).find((item) => item.id === exerciseId) ?? defById(exerciseId, state);
 }
 
-export function defById(id: string): ExerciseDef {
+export function defById(id: string, state?: JeetState): ExerciseDef {
+  const custom = state?.library.find((item) => item.id === id);
+  if (custom) return custom;
   for (const list of Object.values(PLANS)) {
     const found = list.find((item) => item.id === id);
     if (found) return found;
   }
-  return LEGACY[id] ?? PLANS.push[1];
+  return LEGACY[id] ?? { id, name: "تمرين سابق", kind: "strength", image: "", sets: 3, reps: "8–12", rest: 90 };
 }
+
+export function defaultPlans(): WorkoutPlan[] {
+  const names = { push: "دفع", pull: "سحب", legs: "أرجل", upper: "علوي", lower: "سفلي" };
+  const descriptions = { push: "صدر، كتف وترايسبس", pull: "ظهر وبايسبس", legs: "قوة الجزء السفلي", upper: "توازن الجزء العلوي", lower: "أرجل وورك وسمانة" };
+  return Object.entries(PLANS).map(([id, exercises]) => ({
+    id, name: names[id as keyof typeof names], description: descriptions[id as keyof typeof descriptions],
+    exercises: exercises.map((item) => ({ ...item, walk: item.walk ? { ...item.walk } : undefined })),
+  }));
+}
+
+export function defaultLibrary(): ExerciseDef[] {
+  return [...new Map([...Object.values(PLANS).flat(), ...Object.values(LEGACY)].map((item) => [item.id, { ...item, equipment: item.kind === "walk" ? "كارديو" : "جهاز" }])).values()];
+}
+
+export function planTitle(state: JeetState, id: string): string {
+  return state.plans.find((plan) => plan.id === id)?.name ?? PLAN_TITLE[id]?.split(" · ").at(-1) ?? "جدول سابق";
+}
+
+export function estimatedMinutes(exercises: ExerciseDef[]) {
+  return Math.max(1, Math.round(exercises.reduce((n, item) => n + (item.kind === "walk" ? item.walk?.minutes ?? 6 : item.sets * 0.65 + Math.max(0, item.sets - 1) * (item.rest ?? 90) / 60), 0)));
+}
+
+export function newId(prefix: string) {
+  return `${prefix}-${globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`}`;
+}
+

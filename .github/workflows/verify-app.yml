@@ -1,0 +1,41 @@
+name: Verify Jeet
+on:
+  push:
+    branches: ["codex/**"]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+      - run: npm ci
+      - run: npm run test:jeet
+      - run: npm run typecheck
+      - run: npm run build:apk
+      - run: npx playwright install --with-deps chromium
+      - run: node scripts/browser-jeet-smoke.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: jeet-interface-verification
+          path: artifacts/jeet-browser/
+          if-no-files-found: ignore
+      - run: bash android/gradlew -p android assembleDebug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jeet-2.0-debug
+          path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error

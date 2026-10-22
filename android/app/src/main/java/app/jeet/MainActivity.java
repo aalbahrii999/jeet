@@ -35,6 +35,9 @@ import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
+import org.json.JSONObject;
 
 public class MainActivity extends AppCompatActivity {
     private static final int NOTIFY_REQUEST = 41;
@@ -42,6 +45,40 @@ public class MainActivity extends AppCompatActivity {
     private String pendingFacing = "environment";
     private boolean cameraAsked = false;
     private File pendingPhoto;
+    private String pendingBackup;
+
+    private final ActivityResultLauncher<String> backupCreate = registerForActivityResult(
+            new ActivityResultContracts.CreateDocument("application/json"), uri -> {
+                String data = pendingBackup;
+                pendingBackup = null;
+                if (uri == null) { deliverBackup("cancel", null); return; }
+                if (data == null) { deliverBackup("error", null); return; }
+                new Thread(() -> {
+                    try (OutputStream out = getContentResolver().openOutputStream(uri, "w")) {
+                        if (out == null) throw new IllegalStateException("file");
+                        out.write(data.getBytes(StandardCharsets.UTF_8));
+                        deliverBackup("saved", null);
+                    } catch (Exception ignored) { deliverBackup("error", null); }
+                }, "jeet-backup-save").start();
+            });
+
+    private final ActivityResultLauncher<String> backupOpen = registerForActivityResult(
+            new ActivityResultContracts.GetContent(), uri -> {
+                if (uri == null) { deliverBackup("cancel", null); return; }
+                new Thread(() -> {
+                    try (InputStream in = getContentResolver().openInputStream(uri);
+                         ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+                        if (in == null) throw new IllegalStateException("file");
+                        byte[] bytes = new byte[8192];
+                        int count;
+                        while ((count = in.read(bytes)) != -1) {
+                            if (out.size() + count > 20 * 1024 * 1024) throw new IllegalArgumentException("large");
+                            out.write(bytes, 0, count);
+                        }
+                        deliverBackup("import", out.toString(StandardCharsets.UTF_8.name()));
+                    } catch (Exception ignored) { deliverBackup("error", null); }
+                }, "jeet-backup-open").start();
+            });
 
     private final ActivityResultLauncher<String> cameraPermission =
             registerForActivityResult(new ActivityResultContracts.RequestPermission(), granted -> {
@@ -83,7 +120,7 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         web = new WebView(this);
-        web.setBackgroundColor(Color.parseColor("#101412"));
+        web.setBackgroundColor(Color.parseColor("#0e161b"));
         WebSettings settings = web.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
@@ -92,7 +129,7 @@ public class MainActivity extends AppCompatActivity {
         web.addJavascriptInterface(new Bridge(), "JeetAndroid");
 
         FrameLayout root = new FrameLayout(this);
-        root.setBackgroundColor(Color.parseColor("#101412"));
+        root.setBackgroundColor(Color.parseColor("#0e161b"));
         root.addView(web, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT
@@ -148,6 +185,26 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private class Bridge {
+        @JavascriptInterface
+        public void exportBackup(String payload, String filename) {
+            if (payload == null || payload.length() > 20 * 1024 * 1024) { deliverBackup("error", null); return; }
+            runOnUiThread(() -> {
+                pendingBackup = payload;
+                String safe = filename == null ? "jeet-backup.json" : filename.replaceAll("[^A-Za-z0-9._-]", "_");
+                if (!safe.endsWith(".json")) safe += ".json";
+                try { backupCreate.launch(safe); }
+                catch (Exception ignored) { pendingBackup = null; deliverBackup("error", null); }
+            });
+        }
+
+        @JavascriptInterface
+        public void importBackup() {
+            runOnUiThread(() -> {
+                try { backupOpen.launch("application/json"); }
+                catch (Exception ignored) { deliverBackup("error", null); }
+            });
+        }
+
         @JavascriptInterface
         public String startRestTimer(String payload) {
             return RestAlarm.start(MainActivity.this, payload);
@@ -253,6 +310,18 @@ public class MainActivity extends AppCompatActivity {
                 return "fail";
             }
         }
+    }
+
+    private void deliverBackup(String kind, String content) {
+        try {
+            JSONObject result = new JSONObject();
+            result.put("kind", kind);
+            if (content != null) result.put("content", content);
+            String arg = JSONObject.quote(result.toString());
+            runOnUiThread(() -> {
+                if (web != null) web.evaluateJavascript("window.jeetOnBackup&&window.jeetOnBackup(" + arg + ")", null);
+            });
+        } catch (Exception ignored) { /* No source data is modified on failure. */ }
     }
 
     private void openCamera() {

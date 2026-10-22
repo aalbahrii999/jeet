@@ -1,4 +1,4 @@
-import { Timer, Vibrate, X } from "lucide-react";
+import { Timer, Vibrate, X } from "./icons";
 import { Btn } from "./ui";
 import { allowPocketAlert, cancelRest, extendRest, formatRest, startRest, useRestTimer } from "./rest-timer";
 

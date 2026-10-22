@@ -11,6 +11,8 @@ type AndroidBridge = {
   cancelRestTimer?: () => void;
   restTimerStatus?: () => string;
   openRestAlarmSettings?: () => void;
+  exportBackup?: (payload: string, filename: string) => void;
+  importBackup?: () => void;
 };
 
 type JeetWindow = Window & {
@@ -18,6 +20,7 @@ type JeetWindow = Window & {
   jeetBack?: () => string;
   jeetSyncReminders?: () => void;
   jeetOnPhoto?: (data: string | null) => void;
+  jeetOnBackup?: (payload: string) => void;
 };
 
 export function jeetWindow(): JeetWindow {
