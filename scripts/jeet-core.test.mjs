@@ -49,6 +49,11 @@ test("Jeet program, migration and storage", async (t) => {
     assert.throws(() => schema.validateState({ ...s, schemaVersion: 3 }));
     assert.throws(() => schema.validateState({ ...s, gymDays: [] }));
   });
+  await t.test("backup import preserves positive fractional measurements without silently changing them", () => {
+    const s = schema.defaultState(); s.measures = [{ date: "2026-01-02", waist: 1, weight: 0.4 }];
+    const next = schema.validateState(schema.backupDocument(s)); assert.deepEqual(next.measures, s.measures);
+    for (const value of [0, -1, NaN, Infinity]) assert.throws(() => schema.validateState({ ...s, measures: [{ ...s.measures[0], weight: value }] }));
+  });
   await t.test("1.3 update retains photos, measurements, moved days and an unfinished workout after the first save", async () => {
     const { store } = await loadJeet();
     const image = "data:image/png;base64,aGVsbG8=";

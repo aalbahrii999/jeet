@@ -7,6 +7,7 @@ const bad = (field: string): never => { throw new Error(`بيانات غير ص�
 function object(value: unknown, field: string): Obj { if (!value || typeof value !== "object" || Array.isArray(value)) return bad(field); return value as Obj; }
 function text(value: unknown, field: string, max = 120, empty = false): string { if (typeof value !== "string" || value.length > max || (!empty && !value.trim())) return bad(field); return value.trim(); }
 function number(value: unknown, field: string, min = 0, max = 10000): number { if (typeof value !== "number" || !Number.isFinite(value) || value < min || value > max) return bad(field); return value; }
+function positive(value: unknown, field: string, max: number): number { const n = number(value, field, 0, max); return n > 0 ? n : bad(field); }
 function integer(value: unknown, field: string, min: number, max: number) { const n = number(value, field, min, max); return Number.isInteger(n) ? n : bad(field); }
 function list(value: unknown, field: string): unknown[] { return Array.isArray(value) ? value : bad(field); }
 function date(value: unknown): string { const s = text(value, "التاريخ", 10); if (!/^20\d{2}-\d{2}-\d{2}$/.test(s) || iso(parseDate(s)) !== s) return bad("التاريخ"); return s; }
@@ -113,7 +114,7 @@ export function validateState(raw: unknown): JeetState {
     ...base, plans, library, gymDays, weekTargets, photos, moves, draft, autoRest: x.autoRest !== false,
     reminder: time(x.reminder, base.reminder), measureTime: time(x.measureTime, base.measureTime), reminders: x.reminders !== false,
     sessions: [...new Map(sessions.map((item) => [item.date, item])).values()],
-    measures: list(x.measures, "القياسات").map((rawMeasure) => { const m = object(rawMeasure, "القياس"); return { date: date(m.date), waist: number(m.waist, "الخصر", 1, 400), weight: number(m.weight, "الوزن", 1, 600) }; }).sort((a, b) => a.date.localeCompare(b.date)),
+    measures: list(x.measures, "القياسات").map((rawMeasure) => { const m = object(rawMeasure, "القياس"); return { date: date(m.date), waist: positive(m.waist, "الخصر", 400), weight: positive(m.weight, "الوزن", 600) }; }).sort((a, b) => a.date.localeCompare(b.date)),
     bodyShots: list(x.bodyShots ?? [], "صور الجسم").map((rawShot) => { const shot = object(rawShot, "الصورة"); return { date: date(shot.date), image: image(shot.image) }; }),
     streak: legacy ? 0 : integer(x.streak ?? 0, "الاستمرارية", 0, 10000), ember: legacy ? false : Boolean(x.ember),
     lastSettledWeek: legacy ? (earliest ? iso(weekStart(parseDate(earliest))) : null) : x.lastSettledWeek ? date(x.lastSettledWeek) : null,
