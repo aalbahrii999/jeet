@@ -87,6 +87,15 @@ export function validateState(raw: unknown): JeetState {
   for (const session of sessions) weekTargets[iso(weekStart(parseDate(session.date)))] ??= gymDays.length;
   const photos: Record<string, string> = {};
   if (x.photos !== undefined) for (const [key, value] of Object.entries(object(x.photos, "صور الأجهزة"))) photos[text(key, "الجهاز")] = image(value);
+  const moves: JeetState["moves"] = {};
+  if (x.moves !== undefined) for (const [week, rawMoves] of Object.entries(object(x.moves, "الأيام المنقولة"))) {
+    const entries: Record<string, number> = {};
+    for (const [origin, target] of Object.entries(object(rawMoves, "أيام الأسبوع"))) {
+      if (!/^[0-6]$/.test(origin)) return bad("اليوم المنقول");
+      entries[origin] = integer(target, "اليوم البديل", 0, 6);
+    }
+    moves[date(week)] = entries;
+  }
   let draft: Draft | null = null;
   if (x.draft !== undefined && x.draft !== null) {
     const d = object(x.draft, "الحصة غير المكتملة"), logs = list(d.logs, "التمارين").map(decodeLog);
@@ -95,10 +104,13 @@ export function validateState(raw: unknown): JeetState {
     if (d.planName !== undefined) draft.planName = text(d.planName, "اسم الجدول", 70);
     if (d.startedAt !== undefined) draft.startedAt = number(d.startedAt, "بداية الحصة", 0, 5000000000000);
     if (typeof d.comeback === "boolean") draft.comeback = d.comeback;
+    const draftPlan = draft.plan;
+    draft.planName ??= plans.find((plan) => plan.id === draftPlan)?.name ?? "جدول سابق";
+    for (const log of logs) if (!log.definition) log.definition = { ...(library.find((exercise) => exercise.id === log.exerciseId) ?? defById(log.exerciseId)), sets: Math.max(1, Math.min(10, log.sets.length || 1)) };
   }
   const earliest = sessions.map((item) => item.date).sort()[0];
   return {
-    ...base, plans, library, gymDays, weekTargets, photos, draft, autoRest: x.autoRest !== false,
+    ...base, plans, library, gymDays, weekTargets, photos, moves, draft, autoRest: x.autoRest !== false,
     reminder: time(x.reminder, base.reminder), measureTime: time(x.measureTime, base.measureTime), reminders: x.reminders !== false,
     sessions: [...new Map(sessions.map((item) => [item.date, item])).values()],
     measures: list(x.measures, "القياسات").map((rawMeasure) => { const m = object(rawMeasure, "القياس"); return { date: date(m.date), waist: number(m.waist, "الخصر", 1, 400), weight: number(m.weight, "الوزن", 1, 600) }; }).sort((a, b) => a.date.localeCompare(b.date)),

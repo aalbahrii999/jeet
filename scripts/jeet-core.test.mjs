@@ -49,6 +49,30 @@ test("Jeet program, migration and storage", async (t) => {
     assert.throws(() => schema.validateState({ ...s, schemaVersion: 3 }));
     assert.throws(() => schema.validateState({ ...s, gymDays: [] }));
   });
+  await t.test("1.3 update retains photos, measurements, moved days and an unfinished workout after the first save", async () => {
+    const { store } = await loadJeet();
+    const image = "data:image/png;base64,aGVsbG8=";
+    const legacy = {
+      version: "1.3.0", gymDays: [0, 1, 2, 4, 5], reminder: "17:30", measureTime: "08:15", reminders: false,
+      sessions: [session("2026-10-18")], measures: [{ date: "2026-10-16", weight: 83.5, waist: 91 }],
+      bodyShots: [{ date: "2026-10-16", image }], photos: { "chest-press": image },
+      moves: { "2026-10-17": { "1": 3 } }, streak: 2, ember: false, lastSettledWeek: "2026-10-17",
+      draft: { date: "2026-10-22", plan: "push", kind: "full", step: 0, logs: [{ exerciseId: "chest-press", sets: [{ kg: 42.5, reps: 10 }, { kg: null, reps: null }] }] },
+    };
+    const original = JSON.stringify(legacy); let saved = original;
+    globalThis.localStorage = { getItem: key => key === "jeet.v1" ? saved : null, setItem: (key, value) => { assert.equal(key, "jeet.v1"); saved = value; } };
+    store.hydrate(); assert.equal(saved, original, "reading does not rewrite the original");
+    assert.equal(store.update(s => ({ ...s, reminder: "19:00" })), true);
+    const next = schema.validateState(JSON.parse(saved));
+    for (const key of ["measures", "bodyShots", "photos", "moves", "gymDays"]) assert.deepEqual(next[key], legacy[key]);
+    assert.deepEqual(next.sessions[0].exercises[0].sets, legacy.sessions[0].exercises[0].sets);
+    assert.deepEqual(next.draft.logs[0].sets, legacy.draft.logs[0].sets);
+    assert.equal(next.draft.logs[0].definition.name, "ضغط الصدر"); assert.equal(next.draft.planName, "دفع");
+    assert.equal(next.measureTime, "08:15"); assert.equal(next.reminders, false);
+    const edited = program.saveExercise(next, { ...next.library.find(ex => ex.id === "chest-press"), name: "اسم آخر" });
+    assert.equal(edited.draft.logs[0].definition.name, "ضغط الصدر");
+    delete globalThis.localStorage;
+  });
   await t.test("return weights never increase or compound during a return phase", () => {
     const s = schema.defaultState(); s.ember = true; s.sessions = [session("2026-10-01", "push", 2)];
     assert.equal(logic.suggestKg(s, "chest-press", new Date(2026, 9, 22)), 1.5);
