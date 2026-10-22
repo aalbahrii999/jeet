@@ -178,7 +178,7 @@ public class MainActivity extends AppCompatActivity {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
         if (requestCode == NOTIFY_REQUEST && web != null) {
             web.evaluateJavascript(
-                    "(function(){return window.jeetSyncReminders?window.jeetSyncReminders():'';})()",
+                    "(function(){if(window.jeetSyncReminders)window.jeetSyncReminders();window.dispatchEvent(new Event('focus'));})()",
                     null
             );
         }

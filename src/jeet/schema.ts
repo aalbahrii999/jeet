@@ -17,6 +17,7 @@ export function validateExercise(raw: unknown): ExerciseDef {
   const x = object(raw, "التمرين"), kind = x.kind;
   if (kind !== "walk" && kind !== "strength") return bad("نوع التمرين");
   const value: ExerciseDef = { id: text(x.id, "معرّف التمرين"), name: text(x.name, "اسم التمرين", 70), kind, image: x.image === undefined ? "" : text(x.image, "صورة الجهاز", 80, true), sets: integer(x.sets, "المجموعات", 1, 10) };
+  if (!/^[a-zA-Z0-9_-]*$/.test(value.image)) return bad("صورة الجهاز");
   if (x.reps !== undefined) { value.reps = text(x.reps, "التكرارات", 20); if (!/^\d{1,3}(\s*[–\-]\s*\d{1,3})?$/.test(value.reps)) return bad("التكرارات"); }
   if (x.rest !== undefined) value.rest = integer(x.rest, "الراحة", 0, 600);
   for (const key of ["cue", "equipment", "muscle"] as const) if (x[key] !== undefined) value[key] = text(x[key], key, key === "cue" ? 500 : 50, true);
@@ -73,7 +74,11 @@ export function validateState(raw: unknown): JeetState {
   if (library.length > 500) return bad("حجم مكتبة التمارين");
   const sessions = list(x.sessions, "الحضور").map(decodeSession);
   // Snapshot legacy labels so later library changes never rename the past.
-  for (const session of sessions) for (const log of session.exercises) if (!log.definition) log.definition = { ...defById(log.exerciseId), sets: Math.max(1, Math.min(10, log.sets.length || 1)) };
+  for (const session of sessions) {
+    const legacyNames: Record<string, string> = { A: "دفع", B: "سحب", C: "أرجل" };
+    session.planName ??= plans.find((plan) => plan.id === session.plan)?.name ?? legacyNames[session.plan] ?? "جدول سابق";
+    for (const log of session.exercises) if (!log.definition) log.definition = { ...(library.find((exercise) => exercise.id === log.exerciseId) ?? defById(log.exerciseId)), sets: Math.max(1, Math.min(10, log.sets.length || 1)) };
+  }
   const weekTargets: Record<string, number> = {};
   if (x.weekTargets !== undefined) for (const [key, target] of Object.entries(object(x.weekTargets, "أهداف الأسابيع"))) weekTargets[date(key)] = integer(target, "هدف الأسبوع", 1, 7);
   for (const session of sessions) weekTargets[iso(weekStart(parseDate(session.date)))] ??= gymDays.length;

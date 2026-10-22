@@ -3,6 +3,11 @@ import { iso, weekStart } from "./logic";
 import { validateExercise } from "./schema";
 import type { ExerciseDef, JeetState, WorkoutPlan } from "./types";
 
+export function matchesSearch(value: string, query: string) {
+  const normalize = (text: string) => text.normalize("NFKD").replace(/[\u064B-\u065F\u0670]/g, "").replace(/[أإآ]/g, "ا").toLocaleLowerCase().trim();
+  return normalize(value).includes(normalize(query));
+}
+
 export function reorder<T>(items: T[], from: number, to: number): T[] {
   if (from < 0 || to < 0 || from >= items.length || to >= items.length) return items;
   const next = [...items], [item] = next.splice(from, 1); next.splice(to, 0, item); return next;
