@@ -155,10 +155,10 @@ svg { flex-shrink: 0; }
 .set-row .number-field>label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }.set-row .number-control button { width: 25px; }.set-row .number-control { border-radius: 11px; }
 .set-check { width: 43px; min-height: 48px; border: 1px solid var(--color-line); background: var(--color-raised); border-radius: 12px; display: grid; place-items: center; color: var(--color-muted); }.set-row.is-done .set-check { background: var(--color-teal); color: var(--color-bg); border-color: var(--color-teal); }.set-row.is-done .number-control { border-color: #d2f36b50; }
 .training-actions { display: flex; gap: 10px; position: sticky; bottom: calc(83px + env(safe-area-inset-bottom)); z-index: 10; padding-top: 14px; background: linear-gradient(transparent,var(--color-bg) 30%); }.training-actions>.btn:last-child { flex: 1; }
-.app-shell:has(.rest-timer-dock) .training-actions { position: static; }
+.app-shell.has-rest .training-actions { position: static; }
 .rest-timer-dock { position: fixed; inset-inline: 0; bottom: calc(79px + env(safe-area-inset-bottom)); z-index: 30; width: 100%; max-width: 480px; margin-inline: auto; padding-inline: 16px; }
 .rest-timer-dock>div { box-shadow: 0 12px 50px #0009; border-color: #d2f36b60; border-radius: 22px; }.rest-timer-dock .btn { min-height: 43px; padding-block: 9px; }
-.app-shell:has(.rest-timer-dock) .app-content { padding-bottom: calc(24rem + env(safe-area-inset-bottom)); }
+.app-shell.has-rest .app-content { padding-bottom: calc(24rem + env(safe-area-inset-bottom)); }
 .rest-timer-progress { transition: width 250ms linear; }
 .photo-strip { display: flex; gap: 10px; overflow-x: auto; padding-bottom: 4px; }.photo-strip figure { flex-shrink: 0; width: 91px; }.photo-strip img { width: 91px; height: 121px; object-fit: cover; border-radius: 13px; }.photo-strip figcaption { font-size: 10px; color: var(--color-muted); text-align: center; padding-top: 5px; }.photo-strip button { border: 0; padding: 0; background: none; }
 .measure-numbers { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }.measure-numbers strong { display: block; font-size: 34px; font-weight: 600; }.measure-numbers span { color: var(--color-muted); font-size: 11px; }

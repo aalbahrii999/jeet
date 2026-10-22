@@ -58,7 +58,7 @@ export function readyToBump(state: JeetState, exerciseId: string, ceiling: numbe
   const recent = sortedSessions(state).filter((session) => session.exercises.some((log) => log.exerciseId === exerciseId)).slice(0, 2);
   if (recent.length < 2) return false;
   const sets = recent.map((session) => session.exercises.find((log) => log.exerciseId === exerciseId)!.sets.filter((set) => set.done !== false));
-  return sets.every((group) => group.length >= 2 && group.every((set) => (set.reps ?? 0) >= ceiling && (set.kg ?? 0) > 0)) && new Set(sets.flat().map((set) => set.kg)).size === 1;
+  return sets.every((group, index) => group.length >= (recent[index].exercises.find((log) => log.exerciseId === exerciseId)?.definition?.sets ?? 2) && group.every((set) => (set.reps ?? 0) >= ceiling && (set.kg ?? 0) > 0)) && new Set(sets.flat().map((set) => set.kg)).size === 1;
 }
 export function measuredThisWeek(state: JeetState, today: Date): boolean { const from = iso(weekStart(today)), to = iso(today); return state.measures.some((item) => item.date >= from && item.date <= to); }
 export function shotThisWeek(state: JeetState, today: Date): boolean { const from = iso(weekStart(today)), to = iso(today); return state.bodyShots.some((item) => item.date >= from && item.date <= to); }

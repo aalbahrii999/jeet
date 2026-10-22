@@ -1,5 +1,5 @@
 import type { SVGProps } from "react";
-type Props = SVGProps<SVGSVGElement> & { size?: number };
+type Props = Omit<SVGProps<SVGSVGElement>, "name"> & { size?: number };
 const paths = {
   Home: ["m3 10 9-7 9 7v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z"],
   Dumbbell: ["m6.5 6.5 11 11M4 3l-1 1v5l4 4 2-2M20 21l1-1v-5l-4-4-2 2M3 8l5-5M16 21l5-5"],

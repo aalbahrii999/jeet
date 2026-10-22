@@ -109,6 +109,12 @@ export function useRestTimer() {
   return { ...state, remaining: state.timer ? Math.max(0, state.timer.endAt - state.now) : 0 };
 }
 
+export function useHasRestTimer() {
+  const active = useSyncExternalStore(subscribe, () => Boolean(snapshot.timer), () => false);
+  useEffect(initialize, []);
+  return active;
+}
+
 export function startRest(exerciseKey: string, exerciseName: string, seconds: number) {
   initialize();
   if (!Number.isFinite(seconds)) return;

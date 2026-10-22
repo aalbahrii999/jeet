@@ -39,6 +39,7 @@ test("Jeet program, migration and storage", async (t) => {
     for (const key of ["schemaVersion", "plans", "library", "weekTargets", "autoRest"]) delete s[key]; s.version = "1.3.0";
     const next = schema.validateState(s); assert.equal(next.schemaVersion, 2); assert.equal(next.sessions.length, 1); assert.equal(next.plans.length, 5);
     assert.equal(next.sessions[0].exercises[0].definition.name, "ضغط الصدر");
+    assert.equal(next.sessions[0].planName, "دفع");
     const roundtrip = schema.validateState(schema.backupDocument(next)); assert.deepEqual(JSON.parse(JSON.stringify(roundtrip)), JSON.parse(JSON.stringify(next)));
   });
   await t.test("unrelated JSON and malformed nested records are rejected", () => {

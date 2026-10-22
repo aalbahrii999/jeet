@@ -8,6 +8,7 @@ import { iso, measuredThisWeek, sessionOn, shotThisWeek } from "./logic";
 import { androidBridge, jeetWindow } from "./native";
 import { refreshWeek, setDraft, useJeet } from "./store";
 import { RestTimerDock } from "./rest-timer-ui";
+import { useHasRestTimer } from "./rest-timer";
 import type { TabId } from "./types";
 
 const TABS: { id: TabId; label: string; icon: typeof Home }[] = [
@@ -16,6 +17,7 @@ const TABS: { id: TabId; label: string; icon: typeof Home }[] = [
 ];
 export function JeetApp() {
   const { state, ready, error } = useJeet(), [tab, setTab] = useState<TabId>("home"), [today, setToday] = useState(() => new Date());
+  const hasRest = useHasRestTimer();
   const dateKey = iso(today);
   useEffect(() => {
     const refresh = () => { setToday(new Date()); refreshWeek(); };
@@ -41,7 +43,7 @@ export function JeetApp() {
     return () => { delete jeetWindow().jeetSyncReminders; };
   }, [ready, error, dateKey, state]);
   if (!ready) return <div className="app-content" style={{ minHeight: "100dvh", display: "grid", placeItems: "center" }} role="status"><div><BrandMark /><p className="form-note" style={{ marginTop: 18 }}>نجهّز خطوتك القادمة…</p></div></div>;
-  return <div className="app-shell"><main className="app-content" id="main-content"><header className="topbar"><BrandMark /><span className="save-status">بياناتك على جهازك</span></header>
+  return <div className={`app-shell ${hasRest ? "has-rest" : ""}`}><main className="app-content" id="main-content"><header className="topbar"><BrandMark /><span className="save-status">بياناتك على جهازك</span></header>
     {error ? <div className="notice-banner" role="alert">{error}<button className="text-button" onClick={() => setTab("settings")}>فتح إدارة البيانات</button></div> : null}
     {tab === "home" ? <HomeView state={state} today={today} onTrain={() => setTab("train")} onMeasure={() => setTab("measure")} onPlans={() => setTab("plans")} /> : null}
     {tab === "train" ? <TrainView state={state} today={today} onLeave={() => setTab("home")} /> : null}
