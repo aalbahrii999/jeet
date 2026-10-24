@@ -1,404 +1,69 @@
-import { useRef, useState } from "react";
-import html2canvas from "html2canvas";
-import { jsPDF } from "jspdf";
-import { FileDown } from "lucide-react";
-import { PLAN_TITLE } from "./plan";
-import { attendanceWeeks, iso, reportModel, type ReportModel } from "./logic";
+import { useMemo, useRef, useState } from "react";
+import { attendanceWeeks, iso, parseDate, reportModel, type ReportModel } from "./logic";
 import { androidBridge } from "./native";
-import type { JeetState, PlanId } from "./types";
-import { Btn, Card } from "./ui";
+import { FileDown, Ruler, TrendingUp } from "./icons";
+import { Btn, Card, EmptyState, PageTitle, Pill, Toggle } from "./ui";
+import type { JeetState } from "./types";
 
-function Bars({ rows, max }: { rows: { start: string; label: string; count: number }[]; max: number }) {
-  return (
-    <div className="flex h-28 items-end gap-1.5" dir="ltr" aria-label="حضور ثمانية أسابيع">
-      {rows.map((row) => (
-        <div key={row.start} className="flex min-w-0 flex-1 flex-col items-center gap-1">
-          <div className="flex h-20 w-full items-end">
-            <div
-              className={`w-full rounded-t-md ${row.count ? "bg-teal" : "bg-line"}`}
-              style={{ height: row.count ? `${Math.max(18, (row.count / max) * 100)}%` : "8px" }}
-            />
-          </div>
-          <span className="text-[10px] tabular-nums text-muted">{row.label}</span>
-        </div>
-      ))}
-    </div>
-  );
+function Line({ rows, field }: { rows: ReportModel["measures"]; field: "waist" | "weight" }) {
+  if (rows.length < 2) return <p className="form-note" style={{ marginTop: 20 }}>بعد قياسين يظهر مسار تقدمك هنا.</p>;
+  const values = rows.map((row) => row[field]), min = Math.min(...values), max = Math.max(...values), span = Math.max(max - min, 1), from = parseDate(rows[0].date).getTime(), days = Math.max(1, parseDate(rows.at(-1)!.date).getTime() - from);
+  const points = rows.map((row) => `${18 + (parseDate(row.date).getTime() - from) / days * 284},${22 + (max - row[field]) / span * 92}`).join(" ");
+  return <div className="chart-block"><svg viewBox="0 0 320 138" role="img" aria-label={`${field === "waist" ? "الخصر" : "الوزن"} من ${values[0]} إلى ${values.at(-1)}`} style={{ width: "100%", height: 140 }}><path d="M18 22H302M18 68H302M18 114H302" stroke="var(--color-line)" strokeDasharray="3 5" /><polyline points={points} fill="none" stroke="var(--color-teal)" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />{rows.map((row, i) => { const [x, y] = points.split(" ")[i].split(","); return <circle key={row.date} cx={x} cy={y} r="3" fill="var(--color-bg)" stroke="var(--color-teal)" strokeWidth="2" />; })}</svg><div className="chart-labels" dir="ltr"><span>{rows[0].date.slice(5)}</span><span>{min} — {max}</span><span>{rows.at(-1)!.date.slice(5)}</span></div></div>;
 }
-
-function Line({ values, label }: { values: number[]; label: string }) {
-  if (values.length < 2) return <p className="text-sm text-muted">بعد قياسين يظهر الخط.</p>;
-  const width = 320;
-  const height = 120;
-  const pad = 12;
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  const span = max - min || 1;
-  const points = values
-    .map((value, index) => {
-      const x = pad + (index * (width - pad * 2)) / (values.length - 1);
-      const y = pad + ((max - value) * (height - pad * 2)) / span;
-      return `${x},${y}`;
-    })
-    .join(" ");
-  return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="h-32 w-full" role="img" aria-label={label}>
-      <polyline fill="none" stroke="var(--color-teal)" strokeWidth="3" points={points} />
-    </svg>
-  );
+function ReportSheet({ model, photos }: { model: ReportModel; photos: boolean }) {
+  return <article dir="rtl" style={{ width: 794, padding: 38, background: "#f6f7f0", color: "#14211b", fontFamily: '"IBM Plex Sans Arabic",sans-serif', fontSize: 14, lineHeight: 1.8 }}>
+    <p style={{ color: "#4d643b" }}>جيت · كل حصة، خطوة.</p><h1 style={{ fontSize: 34, marginBlock: 12 }}>تقرير تقدمي</h1><p>{model.generated} · الأيام: {model.gymDays.join("، ")}</p>
+    <h2 style={{ marginTop: 26 }}>الحضور والاستمرارية</h2><p>هذا الأسبوع {model.done} من {model.target} حصص · الاستمرارية {model.streak} أسابيع</p>
+    <p>{model.weeks.map((week) => `${week.start}: ${week.count} حصص`).join(" | ")}</p>
+    <h2 style={{ marginTop: 26 }}>القياسات</h2>{model.measures.length ? model.measures.map((row) => <p key={row.date}>{row.date} · الخصر {row.waist} سم · الوزن {row.weight} كغ</p>) : <p>لم تُسجل قياسات في الفترة المختارة.</p>}
+    <h2 style={{ marginTop: 26 }}>الأوزان المسجلة</h2>{model.lifts.map((lift) => <p key={lift.name}>{lift.name}: آخر وزن {lift.last ?? "—"} كغ · قبله {lift.prev ?? "—"} كغ</p>)}
+    <h2 style={{ marginTop: 26 }}>تفاصيل الحصص</h2>{model.sessions.map((session) => <section key={session.date} style={{ marginTop: 16, borderTop: "1px solid #d4dacd", paddingTop: 10 }}><h3>{session.date} · {session.plan} · {session.kind === "min" ? "مختصرة" : "كاملة"}</h3>{session.exercises.map((exercise, index) => <p key={index}>{exercise.name}: {exercise.walk ? `${exercise.walk.minutes} دقيقة · سرعة ${exercise.walk.speed} · ميل ${exercise.walk.incline}` : exercise.sets.map((set, i) => `ج${i + 1}: ${set.kg ?? "—"} كغ × ${set.reps ?? "—"}`).join(" | ")}</p>)}</section>)}
+    {photos && model.shots.length ? <><h2 style={{ marginTop: 26 }}>صور التقدم</h2><div style={{ display: "flex", flexWrap: "wrap", gap: 15 }}>{model.shots.map((shot) => <figure key={shot.date} style={{ width: 140, margin: 0 }}><img src={shot.image} alt="" style={{ width: 140, height: 185, objectFit: "cover", borderRadius: 10 }} /><figcaption>{shot.date}</figcaption></figure>)}</div></> : null}
+    <p style={{ marginTop: 28, fontSize: 12, color: "#58604f" }}>{model.weak ? "البيانات محدودة، ولا تكفي لاستنتاج تقدم مؤكد." : "هذا التقرير يعرض الأداء المسجل؛ لا يفترض أداء لم يُسجل."} الجداول قابلة للتعديل حسب قدرة المستخدم وتوجيهات المدرب. لا يتضمن التقرير تشخيصًا أو نصيحة علاجية.</p>
+  </article>;
 }
-
-function sign(value: number | null, unit: string) {
-  if (value === null) return "—";
-  const prefix = value > 0 ? "+" : "";
-  const text = `${prefix}${value}${unit ? ` ${unit}` : ""}`;
-  return `\u202A${text}\u202C`;
-}
-
-const sheetStyle = {
-  width: 794,
-  background: "#F4F1EA",
-  color: "#101412",
-  fontFamily: '"IBM Plex Sans Arabic", sans-serif',
-  padding: 36,
-  boxSizing: "border-box" as const,
-};
-
-function ReportSheet({ model }: { model: ReportModel }) {
-  const payload = {
-    app: "jeet",
-    generated: model.generated,
-    attendance: { this_week: model.done, target: model.target, streak_weeks: model.streak, ember: model.ember },
-    weeks: model.weeks,
-    measures: model.measures,
-    sessions: model.sessions,
-    lifts: model.lifts,
-    constraints: {
-      days_per_week: 5,
-      keep_split: "order is push, pull, legs, upper, lower. A missed day moves that plan to the next day you attend. Do not skip ahead.",
-      machines_only: true,
-      one_change_only: true,
-      no_hormone_advice: true,
-      if_data_weak: "say so, do not invent progress",
-      body_photos: model.shots.map((shot) => shot.date),
-    },
-  };
-  return (
-    <div dir="rtl" style={sheetStyle}>
-      <p style={{ margin: 0, color: "#1F6F64", fontSize: 14 }}>جيت</p>
-      <h1 style={{ margin: "4px 0 0", fontSize: 32 }}>تقرير التدريب</h1>
-      <p style={{ margin: "8px 0 0", color: "#5c675f" }}>
-        {model.generated} · أسبوع {model.weekStart} · الأيام: {model.gymDays.join(" · ")}
-      </p>
-
-      <h2 style={{ marginTop: 28, fontSize: 18 }}>قيود على أي تحليل</h2>
-      <p style={{ lineHeight: 1.7 }}>
-        خمس حصص بالترتيب: دفع ثم سحب ثم أرجل ثم علوي ثم سفلي. إذا فات يوم، حصته تنتقل ليوم الحضور ولا تُتخطى.
-        الأربعاء والسبت راحة إلا للتعويض. أجهزة فقط لا أوزان حرة. تعديل واحد فقط. لا نصيحة هرمونات ولا تشخيص. إذا القياس أو
-        الصور أو الأوزان ناقصة فقل ذلك ولا تخترع تقدماً.
-      </p>
-
-      <h2 style={{ fontSize: 18 }}>الحضور</h2>
-      <p>
-        هذا الأسبوع {model.done} من {model.target}. الستريك {model.streak} أسبوع
-        {model.ember ? " (اللهب خافت)" : ""}. الوضع: {model.comeback ? "رجوع" : "عادي"}.
-        {model.daysSince === null ? " لا يوجد حضور سابق." : ` آخر حضور قبل ${model.daysSince} يوم.`}
-      </p>
-      <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
-        <thead>
-          <tr>
-            <th style={{ textAlign: "right", borderBottom: "1px solid #d9d3c7", padding: 6 }}>أسبوع من</th>
-            <th style={{ textAlign: "right", borderBottom: "1px solid #d9d3c7", padding: 6 }}>أيام</th>
-          </tr>
-        </thead>
-        <tbody>
-          {model.weeks.map((week) => (
-            <tr key={week.start}>
-              <td style={{ padding: 6, borderBottom: "1px solid #eee7dc" }}>{week.start}</td>
-              <td style={{ padding: 6, borderBottom: "1px solid #eee7dc" }}>{`\u202A${week.count} / ${model.target}\u202C`}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-
-      <h2 style={{ fontSize: 18 }}>القياس</h2>
-      {model.measures.length ? (
-        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
-          <thead>
-            <tr>
-              {["التاريخ", "الخصر سم", "فرق الخصر", "الوزن كغ", "فرق الوزن"].map((head) => (
-                <th key={head} style={{ textAlign: "right", borderBottom: "1px solid #d9d3c7", padding: 6 }}>
-                  {head}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {model.measures.map((row) => (
-              <tr key={row.date}>
-                <td style={{ padding: 6, borderBottom: "1px solid #eee7dc" }}>{row.date}</td>
-                <td style={{ padding: 6, borderBottom: "1px solid #eee7dc" }}>{row.waist}</td>
-                <td style={{ padding: 6, borderBottom: "1px solid #eee7dc" }}>{sign(row.waistDelta, "")}</td>
-                <td style={{ padding: 6, borderBottom: "1px solid #eee7dc" }}>{row.weight}</td>
-                <td style={{ padding: 6, borderBottom: "1px solid #eee7dc" }}>{sign(row.weightDelta, "")}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      ) : (
-        <p>لا قياسات.</p>
-      )}
-
-      <h2 style={{ fontSize: 18 }}>الأجهزة</h2>
-      {model.lifts.map((lift) => (
-        <p key={lift.name} style={{ margin: "4px 0" }}>
-          {lift.name}: آخر وزن {lift.last ?? "—"} · الذي قبله {lift.prev ?? "—"}
-        </p>
-      ))}
-
-      <h2 style={{ fontSize: 18 }}>صور الجسم</h2>
-      {model.shots.length ? (
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          {model.shots.map((shot) => (
-            <figure key={shot.date} style={{ margin: 0, width: 120 }}>
-              <img src={shot.image} alt="" style={{ width: 120, height: 160, objectFit: "cover", borderRadius: 8 }} />
-              <figcaption style={{ fontSize: 12, color: "#5c675f" }}>{shot.date}</figcaption>
-            </figure>
-          ))}
-        </div>
-      ) : (
-        <p>لا صور.</p>
-      )}
-
-      <h2 style={{ fontSize: 18 }}>الجلسات</h2>
-      {model.sessions.length ? (
-        model.sessions.map((session) => (
-          <section key={`${session.date}-${session.plan}`} style={{ marginTop: 14 }}>
-            <p style={{ margin: 0, fontWeight: 700 }}>
-              {session.date} · {PLAN_TITLE[session.plan as PlanId] ?? session.plan} ·{" "}
-              {session.kind === "min" ? "قصيرة" : "كاملة"}
-            </p>
-            {session.exercises.map((exercise, index) => (
-              <p key={`${session.date}-${index}`} style={{ margin: "2px 0 2px 0", fontSize: 14 }}>
-                {exercise.name}
-                {exercise.walk
-                  ? ` — ${exercise.walk.minutes} د · سرعة ${exercise.walk.speed} · ميل ${exercise.walk.incline}`
-                  : exercise.sets.length
-                    ? ` — ${exercise.sets
-                        .map(
-                          (set, setIndex) =>
-                            `مجموعة ${setIndex + 1}: \u202A${set.kg ?? "—"} × ${set.reps ?? "—"}\u202C`,
-                        )
-                        .join("  ")}`
-                    : ""}
-              </p>
-            ))}
-          </section>
-        ))
-      ) : (
-        <p>لا جلسات.</p>
-      )}
-
-      <h2 style={{ fontSize: 18 }}>بيانات رقمية</h2>
-      <p style={{ fontSize: 13 }}>{model.weak ? "جودة البيانات ضعيفة." : "جودة البيانات كافية لمقارنة قصيرة."}</p>
-      <pre
-        dir="ltr"
-        style={{
-          whiteSpace: "pre-wrap",
-          fontSize: 11,
-          lineHeight: 1.45,
-          background: "#fff",
-          padding: 12,
-          borderRadius: 8,
-        }}
-      >
-        {JSON.stringify(payload, null, 2)}
-      </pre>
-    </div>
-  );
-}
-
-async function exportReportPdf(node: HTMLElement, filename: string) {
-  const host = node.parentElement;
-  const previous = host?.getAttribute("style") ?? "";
-  if (host) {
-    host.style.position = "fixed";
-    host.style.left = "0";
-    host.style.top = "0";
-    host.style.width = "794px";
-    host.style.zIndex = "40";
-    host.style.pointerEvents = "none";
-  }
-  await document.fonts.ready;
-  await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+async function exportPdf(node: HTMLElement, filename: string) {
+  const [{ default: html2canvas }, { jsPDF }] = await Promise.all([import("html2canvas"), import("jspdf")]);
+  const host = node.parentElement, previous = host?.getAttribute("style") ?? "";
   try {
-    const canvas = await html2canvas(node, {
-      scale: 2,
-      backgroundColor: "#f4f1ea",
-      width: 794,
-      windowWidth: 794,
-    });
-    if (canvas.width < 20 || canvas.height < 20) throw new Error("blank");
-    const pdf = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
-    const pageWidth = 210;
-    const pageHeight = 297;
-    const imgHeight = (canvas.height * pageWidth) / canvas.width;
-    const img = canvas.toDataURL("image/jpeg", 0.85);
-    let left = imgHeight;
-    let position = 0;
-    pdf.addImage(img, "JPEG", 0, position, pageWidth, imgHeight);
-    left -= pageHeight;
-    while (left > 8) {
-      position = left - imgHeight;
-      pdf.addPage();
-      pdf.addImage(img, "JPEG", 0, position, pageWidth, imgHeight);
-      left -= pageHeight;
+    if (host) Object.assign(host.style, { position: "fixed", left: "0", top: "0", width: "794px", height: "auto", overflow: "visible", visibility: "visible", zIndex: "-1" });
+    await document.fonts.ready;
+    await Promise.all([...node.querySelectorAll("img")].map((img) => img.decode().catch(() => undefined)));
+    const height = Math.ceil(node.scrollHeight), pagePixels = Math.floor(794 * 297 / 210), pages = Math.ceil(height / pagePixels);
+    if (pages > 60) throw new Error("التقرير كبير جدًا. اختر فترة أقصر، أو صدّر نسخة البيانات كاملة من الإعدادات.");
+    const pdf = new jsPDF({ unit: "mm", format: "a4" });
+    // Tile the capture; never allocate a canvas as tall as the entire history.
+    for (let page = 0; page < pages; page++) {
+      const slice = Math.min(pagePixels, height - page * pagePixels);
+      const canvas = await html2canvas(node, { scale: 1.5, backgroundColor: "#f6f7f0", width: 794, height: slice, y: page * pagePixels, windowWidth: 794 });
+      if (page) pdf.addPage();
+      pdf.addImage(canvas.toDataURL("image/jpeg", 0.85), "JPEG", 0, 0, 210, slice * 210 / 794);
+      canvas.width = 1; canvas.height = 1;
     }
-    const base64 = pdf.output("datauristring").split(",")[1] ?? "";
-    if (!base64) throw new Error("empty");
     const bridge = androidBridge();
-    if (bridge?.sharePdf) {
-      if (bridge.sharePdf(base64, filename) === "fail") throw new Error("share");
-      return;
-    }
-    const binary = atob(base64);
-    const bytes = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-    const url = URL.createObjectURL(new Blob([bytes], { type: "application/pdf" }));
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = filename;
-    link.click();
-    URL.revokeObjectURL(url);
-  } finally {
-    if (host) host.setAttribute("style", previous);
-  }
+    if (bridge?.sharePdf) { const data = pdf.output("datauristring").split(",")[1]; if (!data || bridge.sharePdf(data, filename) !== "ok") throw new Error("تعذّر مشاركة التقرير."); }
+    else pdf.save(filename);
+  } finally { if (host) host.setAttribute("style", previous); }
 }
-
-export function StatsView({ state, today }: { state: JeetState; today: Date }) {
-  const sheetRef = useRef<HTMLDivElement>(null);
-  const [busy, setBusy] = useState(false);
-  const [failed, setFailed] = useState(false);
-  const weeks = attendanceWeeks(state, today);
-  const model = reportModel(state, today);
-  const measures = model.measures;
-  const last = measures.at(-1);
-  const prev = measures.length > 1 ? measures[measures.length - 2] : undefined;
-  const lifts = model.lifts.filter((lift) => lift.last !== null);
-
-  return (
-    <div className="flex flex-col gap-4">
-      <div>
-        <h1 className="text-2xl font-semibold">إحصاء</h1>
-        <p className="mt-1 text-sm text-muted">الحضور أولاً. الخصر هو رقم الجسم، والوزن تابع له.</p>
-      </div>
-
-      <Card className="p-4">
-        <div className="mb-3 flex items-end justify-between">
-          <h2 className="text-lg font-semibold">الأسابيع</h2>
-          <p className="text-sm tabular-nums text-muted">
-            هذا الأسبوع <span dir="ltr">{model.done}/{model.target}</span>
-          </p>
-        </div>
-        <Bars rows={weeks} max={Math.max(model.target, 1)} />
-        {state.sessions.length === 0 ? (
-          <p className="mt-3 text-sm text-muted">بعد أول حضور يمتلئ العمود.</p>
-        ) : null}
-      </Card>
-
-      <Card className="p-4">
-        <div className="flex items-end justify-between">
-          <h2 className="text-lg font-semibold">الخصر</h2>
-          <p className="text-2xl font-semibold tabular-nums">{last ? `${last.waist}` : "—"}</p>
-        </div>
-        <p className="text-sm text-muted">
-          {last && prev ? `فرق آخر قياس ${sign(last.waistDelta, "سم")}` : "سم عند السرّة"}
-        </p>
-        <Line values={measures.map((row) => row.waist)} label="خط الخصر" />
-      </Card>
-
-      <Card className="p-4">
-        <div className="flex items-end justify-between">
-          <h2 className="text-lg font-semibold">الوزن</h2>
-          <p className="text-xl font-semibold tabular-nums">{last ? `${last.weight}` : "—"}</p>
-        </div>
-        <Line values={measures.map((row) => row.weight)} label="خط الوزن" />
-      </Card>
-
-      <Card className="p-4">
-        <h2 className="text-lg font-semibold">آخر وزن على الجهاز</h2>
-        {lifts.length === 0 ? (
-          <p className="mt-2 text-sm text-muted">يسجَّل مع التمرين، بالكيلو كما يظهر على الجهاز.</p>
-        ) : (
-          <ul className="mt-3 flex flex-col gap-2">
-            {lifts.map((lift) => {
-              const delta = lift.last !== null && lift.prev !== null ? lift.last - lift.prev : null;
-              return (
-                <li key={lift.name} className="flex items-center justify-between gap-3 text-sm">
-                  <span>{lift.name}</span>
-                  <span className="tabular-nums text-muted">
-                    {lift.last} كغ{delta === null ? "" : ` · ${sign(delta, "")}`}
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </Card>
-
-      <Card className="p-4">
-        <h2 className="text-lg font-semibold">صور الجسم</h2>
-        {model.shots.length ? (
-          <div className="mt-3 flex gap-2 overflow-x-auto pb-1" dir="ltr">
-            {model.shots.map((shot) => (
-              <figure key={shot.date} className="m-0 shrink-0">
-                <img src={shot.image} alt="" className="h-28 w-20 rounded-xl object-cover" />
-                <figcaption className="mt-1 text-center text-[10px] text-muted" dir="ltr">
-                  {shot.date.slice(5)}
-                </figcaption>
-              </figure>
-            ))}
-          </div>
-        ) : (
-          <p className="mt-2 text-sm text-muted">صورة كل جمعة من صفحة القياس. تظهر هنا وفي ملف PDF من الأقدم إلى الأحدث.</p>
-        )}
-      </Card>
-
-      <Btn
-        className="w-full"
-        disabled={busy}
-        onClick={async () => {
-          const node = sheetRef.current;
-          if (!node) return;
-          setBusy(true);
-          setFailed(false);
-          try {
-            await exportReportPdf(node, `jeet-${iso(today)}.pdf`);
-          } catch {
-            setFailed(true);
-          } finally {
-            setBusy(false);
-          }
-        }}
-      >
-        <FileDown className="size-4" aria-hidden />
-        {busy ? "يجهّز الملف" : "تصدير PDF"}
-      </Btn>
-      {failed ? <p className="text-sm text-flame">تعذّر إنشاء الملف. حاول مرة أخرى.</p> : null}
-      <p className="text-sm text-muted">
-        الملف يفصّل الأيام والتمارين والأوزان والقياسات، وفيه قيود تمنع تغيير الخطة. أرسله كما هو للنموذج.
-      </p>
-      {busy ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-bg text-fg">
-          <p className="text-lg">يجهّز الملف</p>
-        </div>
-      ) : null}
-
-      <div aria-hidden style={{ position: "fixed", left: -10000, top: 0, width: 794 }}>
-        <div ref={sheetRef}>
-          <ReportSheet model={model} />
-        </div>
-      </div>
-    </div>
-  );
+export function StatsView({ state, today, onMeasure }: { state: JeetState; today: Date; onMeasure: () => void }) {
+  const [period, setPeriod] = useState(8), [photos, setPhotos] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState(""), [compare, setCompare] = useState(false);
+  const sheet = useRef<HTMLDivElement>(null), dateKey = iso(today);
+  const model = useMemo(() => { const full = reportModel(state, parseDate(dateKey)); if (!period) return full; const from = new Date(parseDate(dateKey)); from.setDate(from.getDate() - period * 7); const key = iso(from); return { ...full, measures: full.measures.filter((row) => row.date >= key), sessions: full.sessions.filter((row) => row.date >= key), shots: full.shots.filter((row) => row.date >= key) }; }, [state, dateKey, period]);
+  const weeks = attendanceWeeks(state, today), latest = model.measures.at(-1), earliest = model.measures[0], shots = [...state.bodyShots].sort((a, b) => a.date.localeCompare(b.date));
+  const [left, setLeft] = useState(shots[0]?.date ?? ""), [right, setRight] = useState(shots.at(-1)?.date ?? "");
+  const max = Math.max(model.target, ...weeks.map((row) => row.count), 1);
+  return <div className="page-stack"><PageTitle eyebrow="أثر كل خطوة" title="تقدمي" subtitle="حضورك أولًا. الأرقام تحكي الباقي مع الوقت." action={<button className="icon-button" aria-label="تسجيل قياس" onClick={onMeasure}><Ruler size={21} /></button>} />
+    <div className="segmented" aria-label="الفترة الزمنية">{[[4, "شهر"], [8, "شهران"], [12, "٣ أشهر"], [0, "الكل"]].map(([value, label]) => <button key={value} aria-pressed={period === value} className={period === value ? "active" : ""} onClick={() => setPeriod(Number(value))}>{label}</button>)}</div>
+    <Card><div className="section-heading"><h2>حضور يصنع الفرق</h2><Pill><bdi dir="ltr">{model.done}/{model.target}</bdi> هذا الأسبوع</Pill></div><div style={{ display: "flex", gap: 9, height: 148, alignItems: "flex-end", paddingTop: 10 }} dir="ltr">{weeks.map((week) => <div key={week.start} style={{ flex: 1, display: "flex", height: "100%", flexDirection: "column", justifyContent: "flex-end", alignItems: "center", gap: 6 }}><span className="form-note">{week.count || ""}</span><div style={{ width: "100%", height: Math.max(7, week.count / max * 100), background: week.start === model.weekStart ? "var(--color-teal)" : week.count ? "#a8cb623d" : "var(--color-raised)", borderRadius: "7px 7px 3px 3px" }} /><span className="form-note" style={{ fontSize: 9 }}>{week.label}</span></div>)}</div><p className="form-note" style={{ marginTop: 16 }}>آخر ٨ أسابيع · كل يوم حضور يُحسب مرة واحدة.</p></Card>
+    <Card><div className="section-heading"><h2>محيط الخصر</h2><Pill tone="blue">سم</Pill></div><div className="measure-numbers"><div><strong>{latest?.waist ?? "—"}</strong><span>آخر قياس في الفترة</span></div><div><strong style={{ fontSize: 24, paddingTop: 10 }}>{latest && earliest && latest !== earliest ? `${Math.round((latest.waist - earliest.waist) * 10) / 10}` : "—"}</strong><span>التغير خلال الفترة · سم</span></div></div><Line rows={model.measures} field="waist" /></Card>
+    <Card><div className="section-heading"><h2>وزن الجسم</h2><Pill tone="muted">كغ</Pill></div><div className="measure-numbers"><div><strong>{latest?.weight ?? "—"}</strong><span>الوزن جزء من الصورة</span></div></div><Line rows={model.measures} field="weight" /></Card>
+    {!state.measures.length ? <Btn variant="ghost" onClick={onMeasure}><Ruler size={18} />سجّل أول قياس</Btn> : null}
+    <Card><div className="section-heading"><h2>أوزانك على الأجهزة</h2><TrendingUp size={20} className="muted" /></div>{model.lifts.filter((lift) => lift.last !== null).length ? model.lifts.filter((lift) => lift.last !== null).map((lift) => <div className="history-row" key={lift.name}><div style={{ flex: 1 }}><h3>{lift.name}</h3><p>{lift.prev === null ? "أول وزن مسجل" : `قبله ${lift.prev} كغ`}</p></div><strong className="numeric">{lift.last} <small className="muted" style={{ fontWeight: 400 }}>كغ</small></strong></div>) : <EmptyState icon="TrendingUp" title="كل قوة تبدأ بأول مجموعة" text="أكد مجموعاتك وأوزانك أثناء التدريب، وتابعها هنا." />}</Card>
+    <Card><div className="section-heading"><h2>صور التقدم</h2>{shots.length >= 2 ? <button className="text-button" onClick={() => setCompare(!compare)}>{compare ? "عرض الشريط" : "قارن صورتين"}</button> : null}</div>{compare && shots.length >= 2 ? <div className="form-grid">{[[left, setLeft, "الصورة الأولى"], [right, setRight, "الصورة الثانية"]].map(([date, setDate, label], index) => { const chosen = shots.find((shot) => shot.date === date) ?? shots[index ? shots.length - 1 : 0]; return <div key={index}><label className="form-field">{label as string}<select value={chosen.date} onChange={(event) => (setDate as (date: string) => void)(event.target.value)}>{shots.map((shot) => <option key={shot.date}>{shot.date}</option>)}</select></label><img src={chosen.image} alt={label as string} style={{ width: "100%", aspectRatio: "3/4", objectFit: "cover", borderRadius: 13, marginTop: 12 }} /></div>; })}</div> : shots.length ? <div className="photo-strip" dir="ltr">{shots.slice(-8).map((shot) => <figure key={shot.date}><img src={shot.image} alt={`صورة تقدم ${shot.date}`} /><figcaption>{shot.date}</figcaption></figure>)}</div> : <p className="form-note">أضف صورك من صفحة القياسات، وستظهر هنا للمقارنة.</p>}</Card>
+    <Card className="settings-group"><h2>تقريرك، وقت ما تحتاجه</h2><p className="form-note">يتضمن الحضور والقياسات وتفاصيل الحصص في الفترة المختارة. يشمل ملخص الأوزان آخر سجل متاح لكل تمرين.</p><Toggle checked={photos} label="إدراج صور الجسم" description="فعّلها فقط إذا أردت مشاركة الصور داخل التقرير." onChange={() => setPhotos(!photos)} /><Btn disabled={busy} onClick={async () => { if (!sheet.current) return; setBusy(true); setError(""); try { await exportPdf(sheet.current, `jeet-${dateKey}.pdf`); } catch (e) { setError(e instanceof Error ? e.message : "تعذّر تجهيز التقرير."); } finally { setBusy(false); } }}><FileDown size={18} />{busy ? "نجهّز تقريرك…" : "تصدير تقرير PDF"}</Btn>{error ? <p className="form-error" role="alert">{error}</p> : null}</Card>
+    <Card><div className="section-heading"><h2>حصص الفترة</h2><span>{model.sessions.length} حصة</span></div>{model.sessions.length ? model.sessions.map((session) => <div className="history-row" key={session.date}><div className="history-date">{session.date.slice(-2)}<small>{session.date.slice(5, 7)}</small></div><div><h3>{session.plan}</h3><p>{session.exercises.length} تمارين · {session.kind === "min" ? "مختصرة" : "كاملة"}</p></div><Pill tone="muted">{session.date}</Pill></div>) : <p className="form-note">بعد أول حصة، يبدأ سجلك هنا.</p>}</Card>
+    <div aria-hidden="true" style={{ position: "fixed", left: 0, top: 0, width: 0, height: 0, overflow: "hidden", visibility: "hidden" }}><div ref={sheet}><ReportSheet model={model} photos={photos} /></div></div>
+    {busy ? <div className="modal-backdrop" role="status" style={{ alignItems: "center", padding: 30 }}><Card><h2>نجهّز تقريرك…</h2><p className="form-note">قد يستغرق قليلًا إذا كانت الفترة طويلة أو تشمل الصور.</p></Card></div> : null}
+  </div>;
 }

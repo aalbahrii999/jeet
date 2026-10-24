@@ -1,0 +1,14 @@
+{
+  "release": "v1.3.0",
+  "asset": "jeet-1.3.0.apk",
+  "sha256": "61572d1fe09a315aea0a464aba91dda9289602c6eb33d82f0fd4b9d366d6e9ae",
+  "package": "app.jeet",
+  "versionCode": 4,
+  "versionName": "1.3.0",
+  "minSdk": 26,
+  "certificates": [
+    "66783baeda07818b4c063209a34f69bda7588173ccae96c61b3f95cc7aedaf1c"
+  ],
+  "debuggable": false,
+  "verifiedBy": "https://github.com/aalbahrii999/jeet/actions/runs/39817148708"
+}
