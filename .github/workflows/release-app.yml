@@ -3,63 +3,19 @@ on:
   push:
     branches: [main, codex/rest-timer-pocket-alerts]
   workflow_dispatch:
-
 permissions:
   contents: read
-
+  actions: read
 concurrency:
   group: jeet-release-${{ github.ref_name }}
   cancel-in-progress: false
-
 jobs:
-  signing-audit:
+  build:
+    if: github.ref != 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: "17"
-      - uses: android-actions/setup-android@v3
-        with:
-          packages: "platform-tools platforms;android-35 build-tools;35.0.0"
-          log-accepted-android-sdk-licenses: false
-      - name: Fetch the published APK and verify its checksum
-        run: |
-          mkdir -p release-audit
-          curl --fail --location --retry 3 --output release-audit/previous.apk https://github.com/aalbahrii999/jeet/releases/download/v1.3.0/jeet-1.3.0.apk
-          echo '61572d1fe09a315aea0a464aba91dda9289602c6eb33d82f0fd4b9d366d6e9ae  release-audit/previous.apk' | sha256sum --check
-      - name: Inspect the original signing certificate
-        run: |
-          python3 scripts/check-apk-update.py --baseline release-audit/previous.apk --apksigner "$ANDROID_HOME/build-tools/35.0.0/apksigner" --aapt "$ANDROID_HOME/build-tools/35.0.0/aapt" --output release-audit/previous.json
-      - uses: actions/upload-artifact@v4
-        with:
-          name: jeet-release-baseline
-          path: release-audit/
-          if-no-files-found: error
-      - name: Require the original signing key
-        env:
-          JEET_SIGNING_KEYSTORE_BASE64: ${{ secrets.JEET_SIGNING_KEYSTORE_BASE64 }}
-          JEET_SIGNING_STORE_PASSWORD: ${{ secrets.JEET_SIGNING_STORE_PASSWORD }}
-          JEET_SIGNING_KEY_ALIAS: ${{ secrets.JEET_SIGNING_KEY_ALIAS }}
-          JEET_SIGNING_KEY_PASSWORD: ${{ secrets.JEET_SIGNING_KEY_PASSWORD }}
-        run: |
-          if [[ -z "$JEET_SIGNING_KEYSTORE_BASE64" || -z "$JEET_SIGNING_STORE_PASSWORD" || -z "$JEET_SIGNING_KEY_ALIAS" || -z "$JEET_SIGNING_KEY_PASSWORD" ]]; then
-            echo '::error::Original Jeet signing key is not configured. A new key cannot update the existing app. See docs/release-signing.ar.md.'
-            echo 'Release blocked: configure the four JEET_SIGNING_* repository secrets using the original keystore. No replacement key will be generated.' >> "$GITHUB_STEP_SUMMARY"
-            exit 1
-          fi
-
-  build-release:
-    needs: signing-audit
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 30
     env:
-      JEET_SIGNING_STORE_FILE: ${{ github.workspace }}/../jeet-original-signing.jks
-      JEET_SIGNING_STORE_PASSWORD: ${{ secrets.JEET_SIGNING_STORE_PASSWORD }}
-      JEET_SIGNING_KEY_ALIAS: ${{ secrets.JEET_SIGNING_KEY_ALIAS }}
-      JEET_SIGNING_KEY_PASSWORD: ${{ secrets.JEET_SIGNING_KEY_PASSWORD }}
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
@@ -74,54 +30,65 @@ jobs:
         with:
           packages: "platform-tools platforms;android-35 build-tools;35.0.0"
           log-accepted-android-sdk-licenses: false
-      - uses: actions/download-artifact@v4
-        with:
-          name: jeet-release-baseline
-          path: release-audit/
       - run: npm ci
       - run: npm run test:jeet
+      - run: node --test scripts/release-signing.test.mjs
       - run: python3 scripts/test-apk-update.py
       - run: npm run typecheck
       - run: npm run build:apk
       - run: npx playwright install --with-deps chromium
       - run: node scripts/browser-jeet-smoke.mjs
-      - name: Restore the original key without logging its contents
+      - name: Prepare persistent release signing with encrypted owner backup
+        run: node scripts/release-signing.mjs
         env:
-          JEET_SIGNING_KEYSTORE_BASE64: ${{ secrets.JEET_SIGNING_KEYSTORE_BASE64 }}
+          JEET_SIGNING_BUNDLE: ${{ secrets.JEET_SIGNING_BUNDLE }}
+          JEET_SIGNING_BACKUP_PRIVATE_KEY: ${{ secrets.JEET_SIGNING_BACKUP_PRIVATE_KEY }}
+      - name: Build the general release APK
         run: |
-          umask 077
-          printf '%s' "$JEET_SIGNING_KEYSTORE_BASE64" | base64 --decode > "$JEET_SIGNING_STORE_FILE"
-      - run: bash android/gradlew -p android assembleRelease
-      - name: Reject an incompatible update
-        run: |
-          mkdir -p release-output
+          bash android/gradlew -p android assembleRelease
           cp android/app/build/outputs/apk/release/app-release.apk release-output/jeet-2.0.0.apk
-          python3 scripts/check-apk-update.py --baseline release-audit/previous.apk --candidate release-output/jeet-2.0.0.apk --apksigner "$ANDROID_HOME/build-tools/35.0.0/apksigner" --aapt "$ANDROID_HOME/build-tools/35.0.0/aapt" --output release-output/update-compatibility.json
-          cd release-output
-          sha256sum jeet-2.0.0.apk > SHA256SUMS
-      - name: Remove the temporary signing key
-        if: always()
-        run: rm -f "$JEET_SIGNING_STORE_FILE"
+      - name: Prepare the requested personal recovery data
+        run: node scripts/prepare-personal-backup.mjs
+        env:
+          JEET_INITIAL_BACKUP_FILE: ${{ runner.temp }}/jeet-personal-backup.json
+      - name: Build the personal APK and verify first-launch restoration
+        env:
+          JEET_INITIAL_BACKUP_FILE: ${{ runner.temp }}/jeet-personal-backup.json
+        run: |
+          bash android/gradlew -p android assembleRelease --rerun-tasks
+          cp android/app/build/outputs/apk/release/app-release.apk release-output/jeet-2.0.0-personal.apk
+          node scripts/browser-recovery-smoke.mjs
+      - name: Verify both APK signatures, identity and provenance
+        run: python3 scripts/check-release-apks.py
       - uses: actions/upload-artifact@v4
         with:
           name: jeet-2.0.0-release
           path: release-output/
           if-no-files-found: error
-
+      - name: Remove temporary private material
+        if: always()
+        run: rm -f "$RUNNER_TEMP/jeet-release.p12" "$RUNNER_TEMP/jeet-personal-backup.json"
   publish:
-    needs: build-release
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       contents: write
+      actions: read
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/download-artifact@v4
+      - uses: actions/setup-node@v5
         with:
-          name: jeet-2.0.0-release
-          path: release-output/
-      - name: Publish the stable release after compatibility checks
+          node-version: "22"
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: "platform-tools platforms;android-35 build-tools;35.0.0"
+          log-accepted-android-sdk-licenses: false
+      - name: Publish only the verified signed build matching this source tree
+        run: node scripts/publish-verified-release.mjs
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release create v2.0.0 release-output/jeet-2.0.0.apk release-output/SHA256SUMS release-output/update-compatibility.json --target "$GITHUB_SHA" --title 'جيت 2.0.0' --notes-file release/notes-2.0.0.ar.md --latest

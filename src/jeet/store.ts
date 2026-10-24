@@ -1,6 +1,7 @@
 import { useEffect, useSyncExternalStore } from "react";
 import { iso, parseDate, settle, weekStart } from "./logic";
 import { defaultState, validateState } from "./schema";
+import { initialBackup } from "./initial-data";
 import type { BodyShot, Draft, JeetState, Measure, Session } from "./types";
 export { defaultState } from "./schema";
 
@@ -22,7 +23,10 @@ export function hydrate() {
   let raw: string | null = null;
   try {
     raw = localStorage.getItem(KEY);
-    state = settle(raw ? validateState(JSON.parse(raw)) : defaultState());
+    const packaged = raw === null ? initialBackup() : null;
+    state = settle(raw !== null ? validateState(JSON.parse(raw)) : packaged ? validateState(JSON.parse(packaged)) : defaultState());
+    // A personal APK seeds only an absent store. Existing, reset or damaged data wins.
+    if (raw === null && packaged) localStorage.setItem(KEY, JSON.stringify(state));
     // Read and migrate in memory. Never overwrite an unreadable original.
   } catch {
     damaged = raw;

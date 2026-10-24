@@ -55,6 +55,8 @@ val buildWebAssets by tasks.registering(Exec::class) {
     inputs.dir(rootProject.projectDir.resolve("../public/machines"))
     inputs.file(rootProject.projectDir.resolve("../package-lock.json"))
     inputs.file(rootProject.projectDir.resolve("../scripts/build-apk.mjs"))
+    inputs.property("initialBackupPath", System.getenv("JEET_INITIAL_BACKUP_FILE") ?: "")
+    System.getenv("JEET_INITIAL_BACKUP_FILE")?.let { inputs.file(file(it)) }
     outputs.dir(layout.projectDirectory.dir("src/main/assets/www"))
 }
 
@@ -66,9 +68,9 @@ val requireUpdateKey by tasks.registering {
     doLast {
         val required = listOf("JEET_SIGNING_STORE_FILE", "JEET_SIGNING_STORE_PASSWORD", "JEET_SIGNING_KEY_ALIAS", "JEET_SIGNING_KEY_PASSWORD")
         check(required.all { !System.getenv(it).isNullOrBlank() }) {
-            "Release signing requires the original Jeet key. Debug signing is never used for updates."
+            "Release signing requires the persistent Jeet release key. Debug signing is never used."
         }
-        check(file(System.getenv("JEET_SIGNING_STORE_FILE")).isFile) { "Original signing keystore not found." }
+        check(file(System.getenv("JEET_SIGNING_STORE_FILE")).isFile) { "Release signing keystore not found." }
     }
 }
 

@@ -1,4 +1,4 @@
-import { cp, mkdir, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "vite";
@@ -7,6 +7,8 @@ import tailwindcss from "@tailwindcss/vite";
 
 const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const outDir = join(root, "android/app/src/main/assets/www");
+const initialBackup = process.env.JEET_INITIAL_BACKUP_FILE
+  ? JSON.stringify(JSON.parse(await readFile(process.env.JEET_INITIAL_BACKUP_FILE, "utf8"))) : "";
 
 // The APK uses a standalone file:// bundle, not TanStack Start's server output.
 // Regenerate it before Gradle packages assets so source changes reach the APK.
@@ -16,7 +18,7 @@ await build({
   base: "./",
   publicDir: false,
   plugins: [react(), tailwindcss()],
-  define: { "process.env.NODE_ENV": JSON.stringify("production") },
+  define: { "process.env.NODE_ENV": JSON.stringify("production"), "__JEET_INITIAL_BACKUP__": JSON.stringify(initialBackup) },
   build: {
     outDir,
     emptyOutDir: true,

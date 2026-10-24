@@ -106,6 +106,25 @@ test("Jeet program, migration and storage", async (t) => {
     globalThis.localStorage = { getItem: () => { throw new Error("read"); }, setItem: () => { writes++; } };
     store.hydrate(); assert.equal(store.setDraft(null), false); assert.equal(writes, 0);
   });
+  await t.test("personal APK restores once and never resurrects reset or replaces existing data", async () => {
+    const restored = schema.defaultState(); restored.sessions = [session("2026-01-02")];
+    globalThis.__JEET_INITIAL_BACKUP__ = JSON.stringify(schema.backupDocument(restored));
+    const disk = new Map();
+    globalThis.localStorage = { getItem: key => disk.get(key) ?? null, setItem: (key, value) => disk.set(key, value) };
+    const first = await loadJeet(); first.store.hydrate(); assert.equal(first.store.getState().sessions.length, 1); assert.ok(disk.has("jeet.v1"));
+    const second = await loadJeet(); second.store.hydrate(); assert.equal(second.store.getState().sessions.length, 1);
+    assert.equal(second.store.resetState(), true);
+    const reset = await loadJeet(); reset.store.hydrate(); assert.equal(reset.store.getState().sessions.length, 0);
+    disk.set("jeet.v1", '{"broken":'); const damaged = await loadJeet(); damaged.store.hydrate();
+    assert.equal(disk.get("jeet.v1"), '{"broken":'); assert.equal(damaged.store.getRecoveryData(), '{"broken":');
+    delete globalThis.__JEET_INITIAL_BACKUP__;
+  });
+  await t.test("personal APK cannot overwrite an inaccessible store", async () => {
+    globalThis.__JEET_INITIAL_BACKUP__ = JSON.stringify(schema.backupDocument(schema.defaultState())); let writes = 0;
+    globalThis.localStorage = { getItem: () => { throw new Error("unreadable"); }, setItem: () => { writes++; } };
+    const fresh = await loadJeet(); fresh.store.hydrate(); assert.equal(writes, 0); assert.equal(fresh.store.setDraft(null), false);
+    delete globalThis.__JEET_INITIAL_BACKUP__;
+  });
   await t.test("all starter templates have unique valid plans and exercises", () => {
     for (const kind of ["default", "three"]) { const template = program.templatePlans(kind); const state = schema.defaultState(); const next = schema.validateState({ ...state, plans: template.plans, gymDays: template.days }); assert.equal(next.plans.length, kind === "three" ? 3 : 5); }
     assert.equal(plan.defaultLibrary().length, new Set(plan.defaultLibrary().map(ex => ex.id)).size);
