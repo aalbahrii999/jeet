@@ -149,7 +149,7 @@ public final class ReminderScheduler {
                 .setSmallIcon(R.drawable.ic_stat)
                 .setContentTitle(context.getString(R.string.notify_title))
                 .setContentText(context.getString(measure ? R.string.notify_measure_body : R.string.notify_body))
-                .setColor(0xFFF08A24)
+                .setColor(0xFFD2F36B)
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setCategory(NotificationCompat.CATEGORY_REMINDER)
                 .setAutoCancel(true)
@@ -235,3 +235,4 @@ public final class ReminderScheduler {
         return context.getSharedPreferences(PREFS, Context.MODE_PRIVATE);
     }
 }
+

@@ -1,0 +1,94 @@
+name: Release Jeet
+on:
+  push:
+    branches: [main, codex/rest-timer-pocket-alerts]
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+concurrency:
+  group: jeet-release-${{ github.ref_name }}
+  cancel-in-progress: false
+jobs:
+  build:
+    if: github.ref != 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: "platform-tools platforms;android-35 build-tools;35.0.0"
+          log-accepted-android-sdk-licenses: false
+      - run: npm ci
+      - run: npm run test:jeet
+      - run: node --test scripts/release-signing.test.mjs
+      - run: python3 scripts/test-apk-update.py
+      - run: npm run typecheck
+      - run: npm run build:apk
+      - run: npx playwright install --with-deps chromium
+      - run: node scripts/browser-jeet-smoke.mjs
+      - name: Prepare persistent release signing with encrypted owner backup
+        run: node scripts/release-signing.mjs
+        env:
+          JEET_SIGNING_BUNDLE: ${{ secrets.JEET_SIGNING_BUNDLE }}
+          JEET_SIGNING_BACKUP_PRIVATE_KEY: ${{ secrets.JEET_SIGNING_BACKUP_PRIVATE_KEY }}
+      - name: Build the general release APK
+        run: |
+          bash android/gradlew -p android assembleRelease
+          cp android/app/build/outputs/apk/release/app-release.apk release-output/jeet-2.0.0.apk
+      - name: Prepare the requested personal recovery data
+        run: node scripts/prepare-personal-backup.mjs
+        env:
+          JEET_INITIAL_BACKUP_FILE: ${{ runner.temp }}/jeet-personal-backup.json
+      - name: Build the personal APK and verify first-launch restoration
+        env:
+          JEET_INITIAL_BACKUP_FILE: ${{ runner.temp }}/jeet-personal-backup.json
+        run: |
+          bash android/gradlew -p android assembleRelease --rerun-tasks
+          cp android/app/build/outputs/apk/release/app-release.apk release-output/jeet-2.0.0-personal.apk
+          node scripts/browser-recovery-smoke.mjs
+      - name: Verify both APK signatures, identity and provenance
+        run: python3 scripts/check-release-apks.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jeet-2.0.0-release
+          path: release-output/
+          if-no-files-found: error
+      - name: Remove temporary private material
+        if: always()
+        run: rm -f "$RUNNER_TEMP/jeet-release.p12" "$RUNNER_TEMP/jeet-personal-backup.json"
+  publish:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: "platform-tools platforms;android-35 build-tools;35.0.0"
+          log-accepted-android-sdk-licenses: false
+      - name: Publish only the verified signed build matching this source tree
+        run: node scripts/publish-verified-release.mjs
+        env:
+          GH_TOKEN: ${{ github.token }}

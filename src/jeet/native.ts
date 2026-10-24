@@ -7,6 +7,12 @@ type AndroidBridge = {
   sharePdf?: (base64: string, filename: string) => string;
   takePhoto?: (facing: string) => void;
   pickImage?: () => void;
+  startRestTimer?: (payload: string) => string;
+  cancelRestTimer?: () => void;
+  restTimerStatus?: () => string;
+  openRestAlarmSettings?: () => void;
+  exportBackup?: (payload: string, filename: string) => void;
+  importBackup?: () => void;
 };
 
 type JeetWindow = Window & {
@@ -14,6 +20,7 @@ type JeetWindow = Window & {
   jeetBack?: () => string;
   jeetSyncReminders?: () => void;
   jeetOnPhoto?: (data: string | null) => void;
+  jeetOnBackup?: (payload: string) => void;
 };
 
 export function jeetWindow(): JeetWindow {
@@ -61,3 +68,4 @@ export async function pickDevicePhoto(): Promise<"file" | "cancel" | string> {
   if (!data || data === "denied") return "cancel";
   return asImage(data);
 }
+

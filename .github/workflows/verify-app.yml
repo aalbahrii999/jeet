@@ -1,0 +1,49 @@
+name: Verify Jeet
+on:
+  push:
+    branches: ["codex/**"]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: jeet-${{ github.event.pull_request.head.ref || github.ref_name }}
+  cancel-in-progress: true
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+      - run: npm ci
+      - run: npm run test:jeet
+      - run: python3 scripts/test-apk-update.py
+      - run: npm run typecheck
+      - run: npm run build:apk
+      - run: npx playwright install --with-deps chromium
+      - run: node scripts/browser-jeet-smoke.mjs
+        env:
+          JEET_VISUAL_LOGS: "1"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: jeet-interface-verification
+          path: artifacts/jeet-browser/
+          if-no-files-found: ignore
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: "platform-tools platforms;android-35 build-tools;35.0.0"
+          log-accepted-android-sdk-licenses: false
+      - run: bash android/gradlew -p android assembleDebug
+      - uses: actions/upload-artifact@v4
+        with:
+          name: jeet-2.0-debug
+          path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
